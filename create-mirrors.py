@@ -32,7 +32,7 @@ def delete_project(name, owner):
 
     print(f"Couldn't find {owner}/{name}")
 
-def create_mirror(name, upstream_url=None, owner=ghc_packages_group_id):
+def create_mirror(name, upstream_url=None, owner=ghc_packages_group_id, description=None):
     if upstream_url is None:
         upstream_url = f'https://github.com/haskell/{name}'
 
@@ -40,6 +40,9 @@ def create_mirror(name, upstream_url=None, owner=ghc_packages_group_id):
         delete_project(name, owner=ghc_packages_group_id); return
     elif project_exists(owner, name):
         return
+
+    if description is None:
+        description = f'GHC mirror of the {name} package'
 
     opts = {
         'name': name,
@@ -51,7 +54,7 @@ def create_mirror(name, upstream_url=None, owner=ghc_packages_group_id):
         'import_url': upstream_url,
         'wiki_enabled': False,
         'visibility': 'public',
-        'description': f'GHC mirror of the {name} package'
+        'description': description
     }
     proj = requests.post(f'{base_url}/projects', data=opts, headers=headers).json()
     print(proj)
@@ -60,7 +63,7 @@ def create_mirror(name, upstream_url=None, owner=ghc_packages_group_id):
     print(f'create project {proj_id}')
     requests.post(f'{base_url}/groups/{owner}/projects/{proj_id}', headers=headers)
 
-def create_hosted(name, upstream_url=None, owner=ghc_packages_group_id):
+def create_hosted(name, upstream_url=None, owner=ghc_packages_group_id, description=None):
     if upstream_url is None:
         upstream_url = f'https://git.haskell.org/packages/{name}'
 
@@ -69,12 +72,15 @@ def create_hosted(name, upstream_url=None, owner=ghc_packages_group_id):
     elif project_exists(owner, name):
         return
 
+    if description is None:
+        description = f'{name} package'
+
     opts = {
         'name': name,
         'path': name,
         'import_url': upstream_url,
         'visibility': 'public',
-        'description': f'{name} package'
+        'description': description,
     }
     proj = requests.post(f'{base_url}/projects', data=opts, headers=headers).json()
     print(proj)
@@ -84,8 +90,25 @@ def create_hosted(name, upstream_url=None, owner=ghc_packages_group_id):
     requests.post(f'{base_url}/groups/{owner}/projects/{proj_id}', headers=headers)
 
 def main():
-    create_mirror('hsc2hs')
-    create_mirror('haddock')
+    create_hosted('libffi-tarballs', 
+                  upstream_url='git://git.haskell.org/libffi-tarballs', 
+                  owner=ghc_group_id)
+    create_hosted('gmp-tarballs', 
+                  upstream_url='git://git.haskell.org/gmp-tarballs', 
+                  owner=ghc_group_id)
+    create_hosted('arcanist-external-json-linter', 
+                  upstream_url='git://git.haskell.org/arcanist-external-json-linter', 
+                  owner=ghc_group_id)
+    create_hosted('nofib', 
+                  upstream_url='https://git.haskell.org/nofib', 
+                  owner=ghc_group_id,
+                  description="Nofib Haskell benchmark suite")
+
+    create_mirror('hsc2hs',
+                  owner=ghc_group_id)
+    create_mirror('haddock',
+                  owner=ghc_group_id)
+
     create_hosted('array')
     create_mirror('binary', 'git://github.com/kolmodin/binary')
     create_mirror('bytestring', 'git://github.com/haskell/bytestring')
@@ -109,6 +132,8 @@ def main():
     create_mirror('xhtml')
     create_mirror('parallel')
     create_mirror('stm')
-    create_hosted('nofib', 'https://git.haskell.org/nofib', owner=ghc_group_id)
 
-main()
+#main()
+create_hosted('nofib', 
+                  upstream_url='https://git.haskell.org/nofib', 
+                  owner=ghc_group_id)
