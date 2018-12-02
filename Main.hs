@@ -237,7 +237,7 @@ type Email = Text
 
 knownUsersList :: [(Username, Username)]
 knownUsersList =
-    [ "Krzysztof Gogolewski <krz.gogolewski@gmail.com>" .= "int-index"
+    [ "Krzysztof Gogolewski <krz.gogolewski@gmail.com>" .= "monoidal"
     , "Ben Gamari <ben@smart-cactus.org>" .= "bgamari"
     , "Austin Seipp <aust@well-typed.com>" .= "thoughtpolice"
     , "ian@well-typed.com" .= "igloo"
