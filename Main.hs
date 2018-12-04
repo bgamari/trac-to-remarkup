@@ -677,13 +677,13 @@ fieldsTable extraRows (f@Fields{..})
         , row "Type" $ concatFields $ T.pack . show <$> ticketType
         , row "TypeOfFailure" $ concatFields $ T.pack . show <$> ticketTypeOfFailure
         , row "Priority" $ concatFields $ toPriorityName <$> ticketPriority
-        , row "Milestone" $ concatFields ticketMilestone
+        -- , row "Milestone" $ concatFields ticketMilestone
         , row "Component" $ concatFields ticketComponent
         , row "Test case" $ concatFields $ ticketTestCase
         , row "Differential revisions" $ concatFields $ renderTicketDifferentials <$> ticketDifferentials
-        , row "Status" $ concatFields $ T.pack . show <$> ticketStatus
+        -- , row "Status" $ concatFields $ T.pack . show <$> ticketStatus
         , row "Description" $ concatFields $ const "description changed" <$> concatFields ticketDescription
-        , row "Keywords" $ concatFields $ T.intercalate ", " <$> ticketKeywords
+        -- , row "Keywords" $ concatFields $ T.intercalate ", " <$> ticketKeywords
         , row "BlockedBy" $ concatFields $ renderTicketNumbers <$> ticketBlockedBy
         , row "Related" $ concatFields $ renderTicketNumbers <$> ticketRelated
         , row "Blocking" $ concatFields $ renderTicketNumbers <$> ticketBlocking
