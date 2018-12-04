@@ -488,6 +488,15 @@ unlessNull xs
   | xs == mempty = Nothing
   | otherwise = Just xs
 
+justWhen :: Bool -> a -> Maybe a
+justWhen True x = Just x
+justWhen _ _ = Nothing
+
+isCommitComment :: TicketChange -> Bool
+isCommitComment tc =
+  isJust (changeComment tc) &&
+  isJust (T.find (== '@') $ changeAuthor tc)
+
 createTicketChanges :: MilestoneMap
                     -> UserIdOracle
                     -> CommentCacheVar
@@ -510,7 +519,7 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                       (fmap Just . tracToMarkdown commentCache t)
                       (changeComment tc)
     let body = T.unlines . catMaybes $
-            [ mrawBody
+            [ mrawBody >>= justWhen (not . isCommitComment $ tc)
             , unlessNull $
                 fieldsTable
                   mempty
