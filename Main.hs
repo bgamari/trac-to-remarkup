@@ -73,19 +73,19 @@ openStateFile stateFile = do
         finishItem = hPutStrLn stateFile . show
     return (finished, finishItem)
 
-openCommentCacheFile :: FilePath -> IO (CommentCacheVar, Int -> Int -> IO ())
+openCommentCacheFile :: FilePath -> IO (CommentCacheVar, StoreComment)
 openCommentCacheFile stateFile = do
     stateFileExists <- doesFileExist stateFile
     !cacheEntries <-
         if stateFileExists
-        then map read . lines <$> readFile stateFile
+        then map readEntry . lines <$> readFile stateFile
         else return []
 
-    let storeItem :: Int -> Int -> IO ()
-        storeItem t n = do
+    let storeItem :: Int -> Maybe Int -> IO ()
+        storeItem t mn = do
           stateFile <- openFile stateFile AppendMode
           hSetBuffering stateFile LineBuffering
-          hPutStrLn stateFile $! show (t, n)
+          hPutStrLn stateFile $! showEntry (t, mn)
           hClose stateFile
 
     cache <- newMVar $! foldr'
@@ -93,6 +93,22 @@ openCommentCacheFile stateFile = do
               mempty
               cacheEntries
     return (cache, storeItem)
+
+    where
+      readEntry :: String -> (Int, Maybe Int)
+      readEntry str =
+        case words str of
+          ('(':_):_ ->
+            -- support legacy state file
+            let (rt, rn) = read str in (rt, Just rn)
+          [t] ->
+            (read t, Nothing)
+          [t,n] ->
+            (read t, Just (read n))
+
+      showEntry :: (Int, Maybe Int) -> String
+      showEntry (t, Nothing) = show t
+      showEntry (t, Just n) = unwords . map show $ [t, n]
 
 attachmentStateFile :: FilePath
 attachmentStateFile = "attachments.state"
@@ -106,9 +122,11 @@ mutationStateFile = "mutations.state"
 commentCacheFile :: FilePath
 commentCacheFile = "comments.state"
 
-type CommentCacheVar = MVar (M.Map Int [Int])
+type CommentCacheVar = MVar CommentCache
 
-type CommentCache = (M.Map Int [Int])
+type CommentCache = (M.Map Int [Maybe Int])
+
+type StoreComment = Int -> Maybe Int -> IO ()
 
 main :: IO ()
 main = do
@@ -365,7 +383,7 @@ makeMutations :: Connection
               -> UserIdOracle
               -> CommentCacheVar
               -> (TicketMutation -> IO ())
-              -> (Int -> Int -> IO ())
+              -> StoreComment
               -> [Trac.TicketMutation]
               -> ClientM ()
 makeMutations conn milestoneMap getUserId commentCache finishMutation storeComment mutations = do
@@ -418,7 +436,8 @@ tracToMarkdown commentCache (TicketNumber n) src =
         getCommentId
         (T.unpack src)
       where
-        getCommentId t c = ((>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache)
+        getCommentId :: Int -> Int -> IO (Maybe Int)
+        getCommentId t c = join . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
 
 nthMay :: Int -> [a] -> Maybe a
 nthMay n = listToMaybe . drop n
@@ -464,10 +483,15 @@ createTicket milestoneMap getUserId commentCache t = do
 ticketNumberToIssueIid (TicketNumber n) =
   IssueIid $ fromIntegral n
 
+unlessNull :: (Eq a, Monoid a) => a -> Maybe a
+unlessNull xs
+  | xs == mempty = Nothing
+  | otherwise = Just xs
+
 createTicketChanges :: MilestoneMap
                     -> UserIdOracle
                     -> CommentCacheVar
-                    -> (Int -> Int -> IO ())
+                    -> StoreComment
                     -> IssueIid
                     -> TicketChange
                     -> ClientM ()
@@ -480,26 +504,38 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
       case items of
         Nothing -> return 1
         Just xs -> return (length xs + 1)
-    rawBody <- liftIO $ tracToMarkdown commentCache t $ fromMaybe "(no text)" $ changeComment tc
-    let body = T.unlines
-            [ rawBody
-            , fieldsTable
-                mempty
-                -- [ ("User", changeAuthor tc) -- ]
-                (changeFields tc)
+    mrawBody <- liftIO $
+                  maybe
+                      (return Nothing)
+                      (fmap Just . tracToMarkdown commentCache t)
+                      (changeComment tc)
+    let body = T.unlines . catMaybes $
+            [ mrawBody
+            , unlessNull $
+                fieldsTable
+                  mempty
+                  -- [ ("User", changeAuthor tc) -- ]
+                  (changeFields tc)
             ]
-        note = CreateIssueNote { cinBody = body
-                               , cinCreatedAt = Just $ changeTime tc
-                               }
-
     liftIO $ putStrLn $ "NOTE: " ++ show body
-    cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
-    liftIO $ putStrLn $ "NOTE CREATED: " ++ show cinResp
+    let discard = T.all isSpace body
+    mcinResp <- if discard
+                  then do
+                    liftIO $ putStrLn $ "COMMENT SKIPPED"
+                    return Nothing
+                  else do
+                    let note = CreateIssueNote { cinBody = body
+                                               , cinCreatedAt = Just $ changeTime tc
+                                               }
+                    cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
+                    liftIO $ putStrLn $
+                      "NOTE CREATED: " ++ show commentNumber ++ " -> " ++ show cinResp
+                    return (Just cinResp)
     liftIO $ do
       modifyMVar_ commentCache $
         return .
-        M.insertWith (flip (++)) (unIssueIid iid) [inrId cinResp]
-      storeComment (unIssueIid iid) (inrId cinResp)
+        M.insertWith (flip (++)) (unIssueIid iid) [inrId <$> mcinResp]
+      storeComment (unIssueIid iid) (inrId <$> mcinResp)
       (M.lookup (unIssueIid iid) <$> readMVar commentCache) >>= print
 
     let fields = hoistFields newValue $ changeFields tc
