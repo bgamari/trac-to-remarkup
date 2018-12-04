@@ -528,7 +528,7 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
             ]
     liftIO $ putStrLn $ "NOTE: " ++ show body
     let discard = T.all isSpace body
-    mcinResp <- if discard
+    mcinId <- if discard
                   then do
                     liftIO $ putStrLn $ "COMMENT SKIPPED"
                     return Nothing
@@ -539,14 +539,7 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                     cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
                     liftIO $ putStrLn $
                       "NOTE CREATED: " ++ show commentNumber ++ " -> " ++ show cinResp
-                    return (Just cinResp)
-    liftIO $ do
-      modifyMVar_ commentCache $
-        return .
-        M.insertWith (flip (++)) (unIssueIid iid) [inrId <$> mcinResp]
-      storeComment (unIssueIid iid) (inrId <$> mcinResp)
-      (M.lookup (unIssueIid iid) <$> readMVar commentCache) >>= print
-
+                    return (Just . inrId $ cinResp)
     let fields = hoistFields newValue $ changeFields tc
     let status = case ticketStatus fields of
                    Nothing         -> Nothing
@@ -575,8 +568,21 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                          , eiWeight = prioToWeight <$> ticketPriority fields
                          }
     liftIO $ print edit
-    when (not $ nullEditIssue edit)
-        $ void $ editIssue gitlabToken (Just authorUid) project iid edit
+    meid <- if nullEditIssue edit
+              then
+                return Nothing
+              else do
+                void $ editIssue gitlabToken (Just authorUid) project iid edit
+                meid <- fmap inrId <$> getNewestIssueNote gitlabToken (Just authorUid) project iid
+                liftIO $ putStrLn $ "Issue edit created: " ++ show meid
+                return meid
+    liftIO $ do
+      modifyMVar_ commentCache $
+        return .
+        M.insertWith (flip (++)) (unIssueIid iid) [mcinId]
+      storeComment (unIssueIid iid) (mcinId <|> meid)
+      (M.lookup (unIssueIid iid) <$> readMVar commentCache) >>= print
+
     return ()
 
 -- | Maps Trac keywords to labels

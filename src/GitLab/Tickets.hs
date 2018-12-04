@@ -194,6 +194,24 @@ type ListIssueNotesAPI =
     :> SudoParam
     :> Get '[JSON] [IssueNoteResp]
 
+getNewestIssueNote :: AccessToken
+                   -> Maybe UserId
+                   -> ProjectId
+                   -> IssueIid
+                   -> ClientM (Maybe IssueNoteResp)
+getNewestIssueNote tok sudo proj iis =
+  listToMaybe <$> getNewestIssueNotes tok sudo proj iis 1
+
+getNewestIssueNotes :: AccessToken
+                    -> Maybe UserId
+                    -> ProjectId
+                    -> IssueIid
+                    -> Int
+                    -> ClientM [IssueNoteResp]
+getNewestIssueNotes tok sudo prj iis pagesize =
+    client (Proxy :: Proxy ListIssueNotesAPI)
+      (Just tok) prj iis (Just Desc) (Just 0) (Just pagesize) sudo
+
 listIssueNotesPage :: AccessToken
                    -> Maybe UserId
                    -> ProjectId
