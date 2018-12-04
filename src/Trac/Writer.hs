@@ -10,15 +10,13 @@ import qualified Data.Map as M
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
 
-projectBaseUrl :: String
-projectBaseUrl = "https://gitlab.staging.haskell.org/projects/2"
-
 type CommentMap = M.Map (Int, Int) Int
 
 data Context
   = Context
       { ctxOrg :: String
       , ctxProject :: String
+      , ctxBaseUrl :: String
       }
 
 type W a = Reader Context a
@@ -45,6 +43,7 @@ data Inline = Bold Inlines
              | ProjectMention
              | WikiLink (Maybe Inlines)
              | WebLink Inlines String
+             | GitCommitLink Inlines String
              | LineBreak
 
 type Inlines = [Inline]
@@ -75,9 +74,9 @@ tableCellContents (TableCell is) = is
 tableCellContents (TableHeaderCell is) = is
 
 
-writeRemarkup :: String -> String -> [Block] -> String
-writeRemarkup org project =
-  render (Just 80) . runW (Context org project) . blocks
+writeRemarkup :: String -> String -> String -> [Block] -> String
+writeRemarkup base org project =
+  render (Just 80) . runW (Context org project base) . blocks
 
 blocks :: [Block] -> W Doc
 blocks bs =
@@ -227,17 +226,26 @@ inline (TicketLink Nothing n Nothing) =
   -- shorthand ticket link: we can do this nicely
   return $ char '#' <> text (show n)
 inline (TicketLink mlabel n Nothing) = do
+  base <- asks ctxBaseUrl
   org <- asks ctxOrg
   proj <- asks ctxProject
-  let url = "/" <> org <> "/" <> proj <> "/issues/" <> show n
+  let url = base <> "/" <> org <> "/" <> proj <> "/issues/" <> show n
   longLink url $ fromMaybe [Str url] mlabel
 inline (TicketLink mlabel n (Just c)) = do
+  base <- asks ctxBaseUrl
   org <- asks ctxOrg
   proj <- asks ctxProject
-  let url = projectBaseUrl <> "/" <> org <> "/" <> proj <> "/issues/" <> show n <> "#note_" <> show c
+  let url = base <> "/" <> org <> "/" <> proj <> "/issues/" <> show n <> "#note_" <> show c
   case mlabel of
     Just label -> longLink url $ fromMaybe [Str url] mlabel
     Nothing    -> return $ text url
+inline (GitCommitLink is hash) = do
+  base <- asks ctxBaseUrl
+  org <- asks ctxOrg
+  proj <- asks ctxProject
+  let url = base <> "/" <> org <> "/" <> proj <> "/commit/" <> hash
+  longLink url is
+
 
 inline (DifferentialLink d) = pure $ mkDifferentialLink d
 

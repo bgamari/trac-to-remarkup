@@ -1,6 +1,8 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Trac.Parser where
 
 --import Pandoc.Types
@@ -30,6 +32,12 @@ import Text.Megaparsec.Prim
 import qualified Text.Megaparsec.Char as C
 import Data.Maybe
 
+class Walk p c where
+  walk :: (c -> Maybe a) -> p -> [a]
+
+instance Walk a b => Walk [a] b where
+  walk f = concatMap (walk f)
+
 normaliseNewlines :: String -> String
 normaliseNewlines ('\r':'\n':xs) = '\n': normaliseNewlines xs
 normaliseNewlines (c:xs) = c : normaliseNewlines xs
@@ -40,6 +48,7 @@ data Inline = Bold Inlines
              | WikiStyle Inlines
              | Monospaced Type String
              | Link String [String]
+             | GitCommitLink String [String]
              | TracTicketLink Int (Maybe [String])
              | DifferentialLink Int
              | CommentLink (Maybe Int) Int (Maybe [String])
@@ -51,6 +60,11 @@ data Inline = Bold Inlines
              | Space deriving Show
 
 type Inlines = [Inline]
+
+instance Walk Inline Inline where
+  walk f x@(Bold xs) = maybeToList (f x) ++ walk f xs
+  walk f x@(Italic xs) = maybeToList (f x) ++ walk f xs
+  walk f x = maybeToList (f x)
 
 type Blocks = [Block]
 type Type = Maybe String
@@ -65,11 +79,31 @@ data Block = Header Int Inlines Blocks
            | Table [TableRow]
            | HorizontalLine deriving Show
 
+instance Walk Block Block where
+  walk f x@(Header _ _ xs) = maybeToList (f x) ++ walk f xs
+  walk f x@(List _ xs) = maybeToList (f x) ++ walk f xs
+  walk f x@(Discussion xs) = maybeToList (f x) ++ walk f xs
+  walk f x = maybeToList (f x)
+
+instance Walk Block Inline where
+  walk f (Header _ xs blocks) = walk f xs ++ concatMap (walk f) blocks
+  walk f (Para xs) = walk f xs
+  walk f (List _ blocks) = concatMap (walk f) blocks
+  walk f (DefnList items) = concatMap (walk f) (map fst items) ++ concatMap (walk f) (concat $ map snd items)
+  walk f (BlockQuote xs) = walk f xs
+  walk f (Discussion blocks) = concatMap (walk f) blocks
+  walk f (Table rows) = concatMap (walk f) (concat rows)
+  walk f _ = []
+
 type TableRow = [TableCell]
 
 data TableCell = TableCell Inlines
                | TableHeaderCell Inlines
                deriving (Show)
+
+instance Walk TableCell Inline where
+  walk f (TableCell xs) = walk f xs
+  walk f (TableHeaderCell xs) = walk f xs
 
 type Document = [Block]
 
@@ -134,6 +168,15 @@ monospaced2 :: Parser Inline
 monospaced2 = try . between (string "{{{") (string "}}}") $ do
   Monospaced <$> (optional $ try (string "#!") *> word <* skipSpaces)
              <*> someTill anyChar (lookAhead $ string "}}}")
+
+quoted :: Parser a -> Parser a
+quoted = between (char '"') (char '"')
+
+stringLit :: Parser String
+stringLit = quoted $ many stringLitChar
+
+stringLitChar :: Parser Char
+stringLitChar = noneOf "\""
 
 str :: Parser Inline
 str = Str <$> some (noneOf (reservedChars ++ "\n\r"))
@@ -383,11 +426,15 @@ makeLink :: String -> Parser ([String] -> Inline)
 makeLink =
   parseFromString
     ( try makeCommentLink
-    <|> try makeTicketLink
+    <|> try makeCommitLink
     <|> try makeTicketLink
     <|> makeWebLink
     )
   where
+    makeCommitLink = do
+      commitHash <- try (string "changeset:") *> stringLit
+      eof
+      return $ GitCommitLink (takeWhile (/= '/') commitHash)
     makeCommentLink = do
       commentNumber <- try (string "comment:") *> number
       ticketNumber <- optional (try (string ":ticket:") *> number)

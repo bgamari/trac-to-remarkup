@@ -11,9 +11,9 @@ import Data.Maybe
 
 type LookupComment = Int -> Int -> IO (Maybe Int)
 
-convert :: String -> String -> Int -> LookupComment -> String -> IO String
-convert org proj n cm s =
-    fmap (writeRemarkup org proj)
+convert :: String -> String -> String -> Int -> LookupComment -> String -> IO String
+convert base org proj n cm s =
+    fmap (writeRemarkup base org proj)
     $ convertBlocks n cm
     $ either (\err -> [R.Para [R.Str "NO PARSE: ", R.Str $ show err, R.Str s]]) id
     $ R.parseTrac
@@ -78,11 +78,10 @@ convertInline n cm (R.Bold is) = Bold <$> convertInlines n cm is
 convertInline n cm (R.Monospaced ty is) = pure (Monospaced ty is)
 convertInline n cm (R.Italic is) = Italic <$> convertInlines n cm is
 convertInline n cm (R.WikiStyle is) = Italic <$> convertInlines n cm is
-convertInline n cm (R.Link url _)
-  | Just commit <- "changeset:\"" `stripPrefix` url
-                                   = pure $ Str (takeWhile (/= '/') commit)
 convertInline n cm (R.Link url []) = pure $ WebLink (intersperse Space [Str url]) url
 convertInline n cm (R.Link url is) = pure $ WebLink (intersperse Space (map Str is)) url
+convertInline n cm (R.GitCommitLink hash []) = pure $ GitCommitLink (intersperse Space [Str hash]) hash
+convertInline n cm (R.GitCommitLink hash is) = pure $ GitCommitLink (intersperse Space (map Str is)) hash
 convertInline n cm (R.Str s) = pure $ Str s
 convertInline _ _ (R.LineBreak)  = pure LineBreak
 convertInline _ _ (R.Space)      = pure Space

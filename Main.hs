@@ -54,6 +54,7 @@ import Trac.Db.Types as Trac
 import Trac.Convert (LookupComment)
 import Trac.Writer (mkDifferentialLink)
 import qualified Trac.Convert
+import qualified Trac.Parser as Trac
 import Settings
 
 type MilestoneMap = M.Map Text MilestoneId
@@ -430,6 +431,7 @@ collapseChanges tcs = TicketChange
 tracToMarkdown :: CommentCacheVar -> TicketNumber -> Text -> IO Text
 tracToMarkdown commentCache (TicketNumber n) src =
       T.pack <$> Trac.Convert.convert
+        (showBaseUrl gitlabBaseUrl)
         gitlabOrganisation
         gitlabProjectName
         (fromIntegral n)
@@ -526,6 +528,11 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                   -- [ ("User", changeAuthor tc) -- ]
                   (changeFields tc)
             ]
+    when (isCommitComment tc) $ do
+      liftIO $ putStrLn $ "COMMIT COMMENT: " ++ (fromMaybe "(no comment)" $ show <$> changeComment tc)
+      let mcommitHash = extractCommitHash =<< changeComment tc
+      liftIO $ putStrLn $ "COMMIT COMMENT: " ++ fromMaybe "???" mcommitHash
+
     liftIO $ putStrLn $ "NOTE: " ++ show body
     let discard = T.all isSpace body
     mcinId <- if discard
@@ -762,3 +769,18 @@ prioToWeight PrioLow     = Weight 3
 prioToWeight PrioNormal  = Weight 5
 prioToWeight PrioHigh    = Weight 7
 prioToWeight PrioHighest = Weight 10
+
+type CommitHash = String
+
+extractCommitHash :: Text -> Maybe CommitHash
+extractCommitHash t = do
+  eparsed <- either (const Nothing) Just $ Trac.parseTrac (T.unpack t)
+  listToMaybe $ Trac.walk extractFromInline eparsed
+  where
+    extractFromInline :: Trac.Inline -> Maybe CommitHash
+    extractFromInline (Trac.GitCommitLink hash _) =
+      Just hash
+    extractFromInline _ =
+      Nothing
+
+isHexChar c = isDigit c || (c `elem` ['a'..'f'])
