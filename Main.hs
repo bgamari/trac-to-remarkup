@@ -521,11 +521,20 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
     liftIO $ print tc
     authorUid <- getUserId $ changeAuthor tc
     let t = case iid of IssueIid n -> TicketNumber $ fromIntegral n
+
+    -- Figure out the comment number. We have to do this by counting how many
+    -- comments there are on this ticket so far, because Trac doesn't actually
+    -- store comment numbers.
     commentNumber <- liftIO $ do
       items <- M.lookup (unIssueIid iid) <$> readMVar commentCache
       case items of
         Nothing -> return 1
         Just xs -> return (length xs + 1)
+
+    -- Compose a note body. In some cases, we don't want to create a note,
+    -- because the information we could put in there isn't useful, or because
+    -- we already store it elsewhere. In those cases, we leave the body empty,
+    -- and check for that later.
     mrawBody <- liftIO $
                   maybe
                       (return Nothing)
@@ -539,17 +548,6 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                   -- [ ("User", changeAuthor tc) -- ]
                   (changeFields tc)
             ]
-    mhash <- if (isCommitComment tc)
-              then do
-                liftIO $ putStrLn $ "COMMIT COMMENT: " ++ (fromMaybe "(no comment)" $ show <$> changeComment tc)
-                let mcommitInfo = extractCommitHash =<< changeComment tc
-                liftIO $ putStrLn $ "COMMIT COMMENT: " ++ fromMaybe "???" (fst <$> mcommitInfo)
-                return $ do
-                  (hash, mrepo) <- mcommitInfo
-                  return $ CommitRef hash mrepo
-              else
-                return Nothing
-
     liftIO $ putStrLn $ "NOTE: " ++ show body
     let discard = T.all isSpace body
     mcinId <- if discard
@@ -564,6 +562,8 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                     liftIO $ putStrLn $
                       "NOTE CREATED: " ++ show commentNumber ++ " -> " ++ show cinResp
                     return (Just . NoteRef . inrId $ cinResp)
+
+    -- Field updates. Figure out which fields to update.
     let fields = hoistFields newValue $ changeFields tc
     let status = case ticketStatus fields of
                    Nothing         -> Nothing
@@ -581,8 +581,10 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
 
     description <-
           liftIO $
-          maybe (return $ Nothing) (fmap Just . tracToMarkdown commentCache t) $
-          ticketDescription fields
+          maybe (return Nothing)
+                (fmap Just . tracToMarkdown commentCache t)
+                (ticketDescription fields)
+
     let edit = EditIssue { eiTitle = notNull $ ticketSummary fields
                          , eiDescription = description
                          , eiMilestoneId = fmap (`M.lookup` milestoneMap) (ticketMilestone fields)
@@ -601,6 +603,29 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                 meid <- fmap inrId <$> getNewestIssueNote gitlabToken (Just authorUid) project iid
                 liftIO $ putStrLn $ "Issue edit created: " ++ show meid
                 return $ NoteRef <$> meid
+
+    -- Handle commit comments. A commit comment is a comment that has been
+    -- added automatically when someone mentioned the ticket number in a
+    -- commit. Commit comments in Trac replicate the entire commit message;
+    -- this is useless to us, because we already have the commit in gitlab, so
+    -- we will not create an actual note, but rather just remember which commit
+    -- this points to, and turn Trac links to this comment into gitlab links
+    -- directly to the commit.
+    mhash <- if (isCommitComment tc)
+              then do
+                liftIO $ putStrLn $ "COMMIT COMMENT: " ++ (fromMaybe "(no comment)" $ show <$> changeComment tc)
+                let mcommitInfo = extractCommitHash =<< changeComment tc
+                liftIO $ putStrLn $ "COMMIT COMMENT: " ++ fromMaybe "???" (fst <$> mcommitInfo)
+                return $ do
+                  (hash, mrepo) <- mcommitInfo
+                  return $ CommitRef hash mrepo
+              else
+                return Nothing
+
+    -- Update our comment cache. Depending on what we did above, we pick an
+    -- apppropriate note reference (pointing to a Note, a Commit, or marking
+    -- the comment as missing), and append it both to the in-memory store and
+    -- the state file.
     liftIO $ do
       let mid = fromMaybe MissingCommentRef $ mcinId <|> meid <|> mhash
       modifyMVar_ commentCache $
