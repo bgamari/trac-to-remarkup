@@ -96,9 +96,12 @@ toTicket conn
     ticketTestCase <- i . fromMaybe "" <$> findOrigField conn "testcase" ticketNumber
     ticketDescription <- i <$> findOrig conn "description" (fromMaybe "" mb_description) ticketNumber
     ticketTypeOfFailure <- i . toTypeOfFailure <$> findOrig conn "failure" "" ticketNumber
-    ticketCC <- i . T.words <$> findOrig conn "cc" (fromMaybe "" mb_cc) ticketNumber
+    ticketCC <- i . commaSep <$> findOrig conn "cc" (fromMaybe "" mb_cc) ticketNumber
     let ticketFields = Fields {..}
     return Ticket {..}
+
+commaSep :: T.Text -> [T.Text]
+commaSep = map T.strip . T.split (== ',')
 
 parseTicketList :: T.Text -> [TicketNumber]
 parseTicketList = mapMaybe parseTicketNumber . T.words
@@ -167,7 +170,7 @@ getTicketChanges conn n mtime = do
           "blocking"     -> fieldChange $ emptyFieldsUpdate{ticketBlocking = mkUpdate (fmap parseTicketList) old new}
           "blockedby"    -> fieldChange $ emptyFieldsUpdate{ticketBlockedBy = mkUpdate (fmap parseTicketList) old new}
           "related"      -> fieldChange $ emptyFieldsUpdate{ticketRelated = mkUpdate (fmap parseTicketList) old new}
-          "cc"           -> fieldChange $ emptyFieldsUpdate{ticketCC = mkUpdate (fmap T.words) old new}
+          "cc"           -> fieldChange $ emptyFieldsUpdate{ticketCC = mkUpdate (fmap commaSep) old new}
 
           -- TODO: The other fields
 
