@@ -121,10 +121,10 @@ type EditIssueAPI =
     :> Put '[JSON] IssueResp
 
 nullEditIssue :: EditIssue -> Bool
-nullEditIssue (EditIssue a b c d e _ g) =
+nullEditIssue (EditIssue a b c _ e _ g) =
     isNothing a && isNothing b && isNothing c &&
-    isNothing d && isNothing e && isNothing g
-    -- N.B. Ignore update time
+    isNothing e && isNothing g
+    -- N.B. Ignore update time and labels
 
 editIssue :: AccessToken -> Maybe UserId
           -> ProjectId -> IssueIid -> EditIssue -> ClientM IssueResp

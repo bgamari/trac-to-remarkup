@@ -48,7 +48,7 @@ data Inline = Bold Inlines
              | WikiStyle Inlines
              | Monospaced Type String
              | Link String [String]
-             | GitCommitLink String [String]
+             | GitCommitLink String (Maybe String) [String]
              | TracTicketLink Int (Maybe [String])
              | DifferentialLink Int
              | CommentLink (Maybe Int) Int (Maybe [String])
@@ -432,9 +432,11 @@ makeLink =
     )
   where
     makeCommitLink = do
-      commitHash <- try (string "changeset:") *> stringLit
+      commitInfo <- try (string "changeset:") *> stringLit
+      let commitHash = takeWhile (/= '/') commitInfo
+          mcommitRepo = emptyToNothing . drop 1 . dropWhile (/= '/') $ commitInfo
       eof
-      return $ GitCommitLink (takeWhile (/= '/') commitHash)
+      return $ GitCommitLink commitHash mcommitRepo
     makeCommentLink = do
       commentNumber <- try (string "comment:") *> number
       ticketNumber <- optional (try (string ":ticket:") *> number)

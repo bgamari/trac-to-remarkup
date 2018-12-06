@@ -211,3 +211,12 @@ data Attachment = Attachment { aResource    :: AttachmentResource
 data AttachmentResource = TicketAttachment !TicketNumber
                         | WikiAttachment !WikiName
                         deriving (Ord, Eq, Show, Read)
+
+data CommentRef = MissingCommentRef
+                | NoteRef Int
+                | CommitRef CommitHash (Maybe RepoName)
+                deriving (Show)
+
+type CommitHash = String
+
+type RepoName = String

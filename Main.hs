@@ -36,6 +36,7 @@ import qualified Data.Text.Encoding as TE
 import System.IO
 import System.Directory
 import System.Environment
+import Debug.Trace
 
 import Database.PostgreSQL.Simple
 import Network.HTTP.Client.TLS as TLS
@@ -82,8 +83,9 @@ openCommentCacheFile stateFile = do
         then map readEntry . lines <$> readFile stateFile
         else return []
 
-    let storeItem :: Int -> Maybe Int -> IO ()
+    let storeItem :: Int -> CommentRef -> IO ()
         storeItem t mn = do
+          traceM $ "Store comment ref: " ++ show t ++ " / " ++ show mn
           stateFile <- openFile stateFile AppendMode
           hSetBuffering stateFile LineBuffering
           hPutStrLn stateFile $! showEntry (t, mn)
@@ -96,20 +98,26 @@ openCommentCacheFile stateFile = do
     return (cache, storeItem)
 
     where
-      readEntry :: String -> (Int, Maybe Int)
+      readEntry :: String -> (Int, CommentRef)
       readEntry str =
         case words str of
           ('(':_):_ ->
             -- support legacy state file
-            let (rt, rn) = read str in (rt, Just rn)
+            let (rt, rn) = read str in (rt, NoteRef rn)
           [t] ->
-            (read t, Nothing)
+            (read t, MissingCommentRef)
+          [t,"git",h] ->
+            (read t, CommitRef h Nothing)
+          [t, "git", h, repo] ->
+            (read t, CommitRef h (Just repo))
           [t,n] ->
-            (read t, Just (read n))
+            (read t, NoteRef (read n))
 
-      showEntry :: (Int, Maybe Int) -> String
-      showEntry (t, Nothing) = show t
-      showEntry (t, Just n) = unwords . map show $ [t, n]
+      showEntry :: (Int, CommentRef) -> String
+      showEntry (t, MissingCommentRef) = show t
+      showEntry (t, NoteRef n) = unwords . map show $ [t, n]
+      showEntry (t, CommitRef h Nothing) = unwords [show t, "git", h]
+      showEntry (t, CommitRef h (Just repo)) = unwords [show t, "git", h, repo]
 
 attachmentStateFile :: FilePath
 attachmentStateFile = "attachments.state"
@@ -125,9 +133,12 @@ commentCacheFile = "comments.state"
 
 type CommentCacheVar = MVar CommentCache
 
-type CommentCache = (M.Map Int [Maybe Int])
+type CommentCache = (M.Map Int [CommentRef])
 
-type StoreComment = Int -> Maybe Int -> IO ()
+type StoreComment = Int -> CommentRef -> IO ()
+
+gitlabApiBaseUrl =
+  gitlabBaseUrl { baseUrlPath = "api/v4" }
 
 main :: IO ()
 main = do
@@ -137,7 +148,7 @@ main = do
     print ticketNumbers
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
-    let env = mkClientEnv mgr gitlabBaseUrl
+    let env = mkClientEnv mgr gitlabApiBaseUrl
     getUserId <- mkUserIdOracle env
     milestoneMap <- either (error . show) id <$> runClientM (makeMilestones conn) env
 
@@ -163,8 +174,8 @@ main = do
             putStrLn "makeMutations' done"
     makeMutations' mutations
 
-    putStrLn "Making attachments"
-    runClientM (makeAttachments conn getUserId) env >>= print
+    -- putStrLn "Making attachments"
+    -- runClientM (makeAttachments conn getUserId) env >>= print
 
 divide :: Int -> [a] -> [[a]]
 divide n xs = map f [0..n-1]
@@ -293,8 +304,8 @@ mkUserIdOracle clientEnv = do
 
 makeMilestones :: Connection -> ClientM MilestoneMap
 makeMilestones conn = do
-    milestones <- liftIO $ Trac.getMilestones conn
-    mconcat <$> mapM createMilestone' milestones
+    -- milestones <- liftIO $ Trac.getMilestones conn
+    -- mconcat <$> mapM createMilestone' milestones
     foldMap (\(GitLab.Tickets.Milestone a b) -> M.singleton a b)
         <$> listMilestones gitlabToken project
   where
@@ -438,8 +449,8 @@ tracToMarkdown commentCache (TicketNumber n) src =
         getCommentId
         (T.unpack src)
       where
-        getCommentId :: Int -> Int -> IO (Maybe Int)
-        getCommentId t c = join . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
+        getCommentId :: Int -> Int -> IO CommentRef
+        getCommentId t c = fromMaybe MissingCommentRef . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
 
 nthMay :: Int -> [a] -> Maybe a
 nthMay n = listToMaybe . drop n
@@ -528,10 +539,16 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                   -- [ ("User", changeAuthor tc) -- ]
                   (changeFields tc)
             ]
-    when (isCommitComment tc) $ do
-      liftIO $ putStrLn $ "COMMIT COMMENT: " ++ (fromMaybe "(no comment)" $ show <$> changeComment tc)
-      let mcommitHash = extractCommitHash =<< changeComment tc
-      liftIO $ putStrLn $ "COMMIT COMMENT: " ++ fromMaybe "???" mcommitHash
+    mhash <- if (isCommitComment tc)
+              then do
+                liftIO $ putStrLn $ "COMMIT COMMENT: " ++ (fromMaybe "(no comment)" $ show <$> changeComment tc)
+                let mcommitInfo = extractCommitHash =<< changeComment tc
+                liftIO $ putStrLn $ "COMMIT COMMENT: " ++ fromMaybe "???" (fst <$> mcommitInfo)
+                return $ do
+                  (hash, mrepo) <- mcommitInfo
+                  return $ CommitRef hash mrepo
+              else
+                return Nothing
 
     liftIO $ putStrLn $ "NOTE: " ++ show body
     let discard = T.all isSpace body
@@ -546,7 +563,7 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                     cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
                     liftIO $ putStrLn $
                       "NOTE CREATED: " ++ show commentNumber ++ " -> " ++ show cinResp
-                    return (Just . inrId $ cinResp)
+                    return (Just . NoteRef . inrId $ cinResp)
     let fields = hoistFields newValue $ changeFields tc
     let status = case ticketStatus fields of
                    Nothing         -> Nothing
@@ -579,15 +596,17 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
               then
                 return Nothing
               else do
+                traceM $ "Issue edit: " ++ show edit
                 void $ editIssue gitlabToken (Just authorUid) project iid edit
                 meid <- fmap inrId <$> getNewestIssueNote gitlabToken (Just authorUid) project iid
                 liftIO $ putStrLn $ "Issue edit created: " ++ show meid
-                return meid
+                return $ NoteRef <$> meid
     liftIO $ do
+      let mid = fromMaybe MissingCommentRef $ mcinId <|> meid <|> mhash
       modifyMVar_ commentCache $
         return .
-        M.insertWith (flip (++)) (unIssueIid iid) [mcinId]
-      storeComment (unIssueIid iid) (mcinId <|> meid)
+        M.insertWith (flip (++)) (unIssueIid iid) [mid]
+      storeComment (unIssueIid iid) mid
       (M.lookup (unIssueIid iid) <$> readMVar commentCache) >>= print
 
     return ()
@@ -770,16 +789,17 @@ prioToWeight PrioNormal  = Weight 5
 prioToWeight PrioHigh    = Weight 7
 prioToWeight PrioHighest = Weight 10
 
-type CommitHash = String
+traceTee x = trace x x
+traceTeeShow x = trace (show x) x
 
-extractCommitHash :: Text -> Maybe CommitHash
+extractCommitHash :: Text -> Maybe (CommitHash, Maybe RepoName)
 extractCommitHash t = do
   eparsed <- either (const Nothing) Just $ Trac.parseTrac (T.unpack t)
-  listToMaybe $ Trac.walk extractFromInline eparsed
+  listToMaybe $ Trac.walk (traceTeeShow . extractFromInline . traceTeeShow) eparsed
   where
-    extractFromInline :: Trac.Inline -> Maybe CommitHash
-    extractFromInline (Trac.GitCommitLink hash _) =
-      Just hash
+    extractFromInline :: Trac.Inline -> Maybe (CommitHash, Maybe RepoName)
+    extractFromInline (Trac.GitCommitLink hash mrepo _) =
+      Just (hash, mrepo)
     extractFromInline _ =
       Nothing
 

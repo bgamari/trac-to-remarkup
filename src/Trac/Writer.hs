@@ -43,7 +43,7 @@ data Inline = Bold Inlines
              | ProjectMention
              | WikiLink (Maybe Inlines)
              | WebLink Inlines String
-             | GitCommitLink Inlines String
+             | GitCommitLink Inlines String (Maybe String)
              | LineBreak
 
 type Inlines = [Inline]
@@ -239,11 +239,12 @@ inline (TicketLink mlabel n (Just c)) = do
   case mlabel of
     Just label -> longLink url $ fromMaybe [Str url] mlabel
     Nothing    -> return $ text url
-inline (GitCommitLink is hash) = do
+inline (GitCommitLink is hash mrepo) = do
   base <- asks ctxBaseUrl
   org <- asks ctxOrg
   proj <- asks ctxProject
-  let url = base <> "/" <> org <> "/" <> proj <> "/commit/" <> hash
+  let repo = fromMaybe proj mrepo
+  let url = base <> "/" <> org <> "/" <> repo <> "/commit/" <> hash
   longLink url is
 
 

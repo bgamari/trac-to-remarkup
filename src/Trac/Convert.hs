@@ -4,12 +4,13 @@ module Trac.Convert (convert, CommentMap, LookupComment) where
 
 import qualified Trac.Parser as R
 import Trac.Writer
+import Trac.Db.Types
 import Data.List
 import qualified Data.Map as M
 import Debug.Trace
 import Data.Maybe
 
-type LookupComment = Int -> Int -> IO (Maybe Int)
+type LookupComment = Int -> Int -> IO CommentRef
 
 convert :: String -> String -> String -> Int -> LookupComment -> String -> IO String
 convert base org proj n cm s =
@@ -73,6 +74,10 @@ convertAdditionalDefnRows n cm = mapM (convertAdditionalDefnRow n cm)
 
 convertInlines n cm = mapM (convertInline n cm)
 
+prettyCommit :: CommitHash -> Maybe RepoName -> [Inline]
+prettyCommit hash Nothing = [Str $ take 7 hash]
+prettyCommit hash (Just repo) = [Str repo, Str ":", Str $ take 7 hash]
+
 convertInline :: Int -> LookupComment -> R.Inline -> IO Inline
 convertInline n cm (R.Bold is) = Bold <$> convertInlines n cm is
 convertInline n cm (R.Monospaced ty is) = pure (Monospaced ty is)
@@ -80,8 +85,8 @@ convertInline n cm (R.Italic is) = Italic <$> convertInlines n cm is
 convertInline n cm (R.WikiStyle is) = Italic <$> convertInlines n cm is
 convertInline n cm (R.Link url []) = pure $ WebLink (intersperse Space [Str url]) url
 convertInline n cm (R.Link url is) = pure $ WebLink (intersperse Space (map Str is)) url
-convertInline n cm (R.GitCommitLink hash []) = pure $ GitCommitLink (intersperse Space [Str hash]) hash
-convertInline n cm (R.GitCommitLink hash is) = pure $ GitCommitLink (intersperse Space (map Str is)) hash
+convertInline n cm (R.GitCommitLink hash mrepo []) = pure $ GitCommitLink (intersperse Space (prettyCommit hash mrepo)) hash mrepo
+convertInline n cm (R.GitCommitLink hash mrepo is) = pure $ GitCommitLink (intersperse Space (map Str is)) hash mrepo
 convertInline n cm (R.Str s) = pure $ Str s
 convertInline _ _ (R.LineBreak)  = pure LineBreak
 convertInline _ _ (R.Space)      = pure Space
@@ -93,9 +98,11 @@ convertInline n cm (R.CommentLink mt c mlabel) = do
   let ticketN = fromMaybe n mt
       mlabelInline = fmap (map Str) mlabel
   cm ticketN c >>= \case
-      Just t ->
+      NoteRef t ->
         pure (TicketLink mlabelInline ticketN (Just t))
-      Nothing ->
+      CommitRef hash mrepo ->
+        pure $ GitCommitLink (fromMaybe (prettyCommit hash mrepo) mlabelInline) hash mrepo
+      MissingCommentRef ->
         traceShow
           ("COULD NOT FIND", n, mt, c)
           (pure $ TicketLink mlabelInline ticketN Nothing)
