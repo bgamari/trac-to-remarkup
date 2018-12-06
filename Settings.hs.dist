@@ -20,9 +20,9 @@ tlsSettings = def { settingDisableCertificateValidation = False }
 -- | Base URL for the target GitLab instance.
 gitlabBaseUrl :: BaseUrl
 -- Plain HTTP:
--- gitlabBaseUrl = BaseUrl Http "gitlab.example.org" 80 "/api/v4"
+-- gitlabBaseUrl = BaseUrl Http "gitlab.example.org" 80 ""
 -- Or HTTPS:
--- gitlabBaseUrl = BaseUrl Https "gitlab.example.org" 443 "/api/v4"
+-- gitlabBaseUrl = BaseUrl Https "gitlab.example.org" 443 ""
 
 -- | API access token to authenticate against target GitLab instance
 gitlabToken :: AccessToken
