@@ -70,6 +70,7 @@ data Fields f = Fields { ticketType          :: f TicketType
                        , ticketDifferentials :: f [Differential]
                        , ticketTestCase      :: f Text
                        , ticketStatus        :: f Status
+                       , ticketCC            :: f [Text]
                        }
 
 hoistFields :: (forall a. f a -> g a) -> Fields f -> Fields g
@@ -89,6 +90,7 @@ hoistFields f Fields{..} =
            , ticketDifferentials = f ticketDifferentials
            , ticketTestCase      = f ticketTestCase
            , ticketStatus        = f ticketStatus
+           , ticketCC            = f ticketCC
            }
 
 emptyFieldsOf :: (forall a. f a) -> Fields f
@@ -98,6 +100,7 @@ emptyFieldsOf x = Fields
     x x x
     x x x
     x x x
+    x
 
 emptyFields :: Fields Maybe
 emptyFields = emptyFieldsOf Nothing
@@ -123,6 +126,7 @@ collapseFields a b =
            , ticketDifferentials = ticketDifferentials a <|> ticketDifferentials b
            , ticketTestCase = ticketTestCase a <|> ticketTestCase b
            , ticketStatus = ticketStatus a <|> ticketStatus b
+           , ticketCC = ticketCC a <|> ticketCC b
            }
 
 deriving instance Show (Fields Identity)

@@ -144,13 +144,15 @@ main :: IO ()
 main = do
     args <- getArgs
     print args
-    let ticketNumbers = S.fromList . map (TicketNumber . read) $ args
-    print ticketNumbers
+    let ticketNumbers = S.fromList . map (TicketNumber . read) . filter (not . isPrefixOf "-") $ args
+        opts = S.fromList . filter (isPrefixOf "-") $ args
+        skipMilestones = "-skip-milestones" `S.member` opts
+        skipAttachments = "-skip-attachments" `S.member` opts
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
     getUserId <- mkUserIdOracle env
-    milestoneMap <- either (error . show) id <$> runClientM (makeMilestones conn) env
+    milestoneMap <- either (error . show) id <$> runClientM (makeMilestones (not skipMilestones) conn) env
 
     (finishedMutations, finishMutation) <- openStateFile mutationStateFile
 
@@ -174,8 +176,9 @@ main = do
             putStrLn "makeMutations' done"
     makeMutations' mutations
 
-    -- putStrLn "Making attachments"
-    -- runClientM (makeAttachments conn getUserId) env >>= print
+    unless skipAttachments $ do
+      putStrLn "Making attachments"
+      runClientM (makeAttachments conn getUserId) env >>= print
 
 divide :: Int -> [a] -> [[a]]
 divide n xs = map f [0..n-1]
@@ -302,10 +305,12 @@ mkUserIdOracle clientEnv = do
             lift $ modify' $ M.insert username uid
             return uid
 
-makeMilestones :: Connection -> ClientM MilestoneMap
-makeMilestones conn = do
-    -- milestones <- liftIO $ Trac.getMilestones conn
-    -- mconcat <$> mapM createMilestone' milestones
+makeMilestones :: Bool -> Connection -> ClientM MilestoneMap
+makeMilestones actuallyMakeThem conn = do
+    when actuallyMakeThem $ do
+      milestones <- liftIO $ Trac.getMilestones conn
+      mconcat <$> mapM createMilestone' milestones
+      pure ()
     foldMap (\(GitLab.Tickets.Milestone a b) -> M.singleton a b)
         <$> listMilestones gitlabToken project
   where
@@ -753,6 +758,7 @@ fieldsTable extraRows (f@Fields{..})
         , row "BlockedBy" $ concatFields $ renderTicketNumbers <$> ticketBlockedBy
         , row "Related" $ concatFields $ renderTicketNumbers <$> ticketRelated
         , row "Blocking" $ concatFields $ renderTicketNumbers <$> ticketBlocking
+        , row "CC" $ concatFields $ T.intercalate ", " <$> ticketCC
         -- , row "ALL" $ Just . T.pack . show $ f
         ] ++ extraRows
 

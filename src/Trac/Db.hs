@@ -35,67 +35,70 @@ type Row =
     (Integer, Text, TracTime, Text,
      Text, Text, Text) :.
     (Maybe Text, Text, Maybe Text,
-     Maybe Text, Maybe Text, TracTime)
+     Maybe Text, Maybe Text, TracTime, Maybe Text)
 
 getTicket :: TicketNumber -> Connection -> IO (Maybe Ticket)
 getTicket (TicketNumber t) conn = do
-  tickets <- mapM toTicket =<< query conn
+  tickets <- mapM (toTicket conn) =<< query conn
       [sql|SELECT id, type, time, component,
                   priority, reporter, status,
                   version, summary, milestone,
-                  keywords, description, changetime
+                  keywords, description, changetime,
+                  cc
            FROM ticket
            WHERE id = ?
           |]
           (Only t)
   return $ listToMaybe tickets
-  where
-    findOrigField :: FromField a => Text -> TicketNumber -> IO (Maybe a)
-    findOrigField field (TicketNumber n) = do
-        mval <- query conn [sql|SELECT oldvalue
-                                FROM ticket_change
-                                WHERE ticket = ?
-                                AND field = ?
-                                ORDER BY time ASC
-                                LIMIT 1
-                               |]
-                      (n, field)
-        return $ case mval of
-          [] -> Nothing
-          [Only x] -> x
 
-    toTicket :: Row -> IO Ticket
-    toTicket ((n, typ, TracTime ticketCreationTime, component,
-               prio, reporter, status) :.
-              (mb_version, summary, mb_milestone,
-               mb_keywords, mb_description, TracTime ticketChangeTime))
-      = do
-        let ticketStatus = Identity New
-            ticketNumber = TicketNumber n
-            ticketCreator = reporter
+findOrigField :: FromField a => Connection -> Text -> TicketNumber -> IO (Maybe a)
+findOrigField conn field (TicketNumber n) = do
+    mval <- query conn [sql|SELECT oldvalue
+                            FROM ticket_change
+                            WHERE ticket = ?
+                            AND field = ?
+                            ORDER BY time ASC
+                            LIMIT 1
+                           |]
+                  (n, field)
+    return $ case mval of
+      [] -> Nothing
+      [Only x] -> x
 
-        let findOrig :: FromField a => Text -> a -> IO a
-            findOrig field def = fromMaybe def <$> findOrigField field ticketNumber
+findOrig :: FromField a => Connection -> Text -> a -> TicketNumber -> IO a
+findOrig conn field def ticketNumber = fromMaybe def <$> findOrigField conn field ticketNumber
 
 
-            i = Identity
-        ticketSummary <- i <$> findOrig "summary" summary
-        ticketComponent <- i <$> findOrig "component" component
+toTicket :: Connection -> Row -> IO Ticket
+toTicket conn
+         ((n, typ, TracTime ticketCreationTime, component,
+           prio, reporter, status) :.
+          (mb_version, summary, mb_milestone,
+           mb_keywords, mb_description, TracTime ticketChangeTime, mb_cc))
+  = do
+    let ticketStatus = Identity New
+        ticketNumber = TicketNumber n
+        ticketCreator = reporter
 
-        ticketType <- i . toTicketType <$> findOrig "type" typ
-        ticketPriority <- i . toPriority <$> findOrig "priority" prio
-        ticketVersion <- i <$> findOrig "version" (fromMaybe "" mb_version)
-        ticketMilestone <- i <$> findOrig "milestone" (fromMaybe "" mb_milestone)
-        ticketKeywords <- i . T.words <$> findOrig "keywords" (fromMaybe "" mb_keywords)
-        ticketBlockedBy <- i . maybe [] parseTicketList <$> findOrigField "blockedby" ticketNumber
-        ticketRelated <- i . maybe [] parseTicketList <$> findOrigField "related" ticketNumber
-        ticketBlocking <- i . maybe [] parseTicketList <$> findOrigField "blocking" ticketNumber
-        ticketDifferentials <- i . maybe [] parseDifferentials <$> findOrigField "differential" ticketNumber
-        ticketTestCase <- i . fromMaybe "" <$> findOrigField "testcase" ticketNumber
-        ticketDescription <- i <$> findOrig "description" (fromMaybe "" mb_description)
-        ticketTypeOfFailure <- i . toTypeOfFailure <$> findOrig "failure" ""
-        let ticketFields = Fields {..}
-        return Ticket {..}
+        i = Identity
+    ticketSummary <- i <$> findOrig conn "summary" summary ticketNumber
+    ticketComponent <- i <$> findOrig conn "component" component ticketNumber
+
+    ticketType <- i . toTicketType <$> findOrig conn "type" typ ticketNumber
+    ticketPriority <- i . toPriority <$> findOrig conn "priority" prio ticketNumber
+    ticketVersion <- i <$> findOrig conn "version" (fromMaybe "" mb_version) ticketNumber
+    ticketMilestone <- i <$> findOrig conn "milestone" (fromMaybe "" mb_milestone) ticketNumber
+    ticketKeywords <- i . T.words <$> findOrig conn "keywords" (fromMaybe "" mb_keywords) ticketNumber
+    ticketBlockedBy <- i . maybe [] parseTicketList <$> findOrigField conn "blockedby" ticketNumber
+    ticketRelated <- i . maybe [] parseTicketList <$> findOrigField conn "related" ticketNumber
+    ticketBlocking <- i . maybe [] parseTicketList <$> findOrigField conn "blocking" ticketNumber
+    ticketDifferentials <- i . maybe [] parseDifferentials <$> findOrigField conn "differential" ticketNumber
+    ticketTestCase <- i . fromMaybe "" <$> findOrigField conn "testcase" ticketNumber
+    ticketDescription <- i <$> findOrig conn "description" (fromMaybe "" mb_description) ticketNumber
+    ticketTypeOfFailure <- i . toTypeOfFailure <$> findOrig conn "failure" "" ticketNumber
+    ticketCC <- i . T.words <$> findOrig conn "cc" (fromMaybe "" mb_cc) ticketNumber
+    let ticketFields = Fields {..}
+    return Ticket {..}
 
 parseTicketList :: T.Text -> [TicketNumber]
 parseTicketList = mapMaybe parseTicketNumber . T.words
@@ -119,70 +122,13 @@ parseDifferential str = do
 
 getTickets :: Connection -> IO [Ticket]
 getTickets conn = do
-    mapM toTicket =<< query_ conn
+    mapM (toTicket conn) =<< query_ conn
       [sql|SELECT id, type, time, component,
                   priority, reporter, status,
                   version, summary, milestone,
                   keywords, description, changetime
            FROM ticket
           |]
-  where
-    findOrigField :: FromField a => Text -> TicketNumber -> IO (Maybe a)
-    findOrigField field (TicketNumber n) = do
-        mval <- query conn [sql|SELECT oldvalue
-                                FROM ticket_change
-                                WHERE ticket = ?
-                                AND field = ?
-                                ORDER BY time ASC
-                                LIMIT 1
-                               |]
-                      (n, field)
-        return $ case mval of
-          [] -> Nothing
-          [Only x] -> x
-
-    toTicket :: Row -> IO Ticket
-    toTicket ((n, typ, TracTime ticketCreationTime, component,
-               prio, reporter, status) :.
-              (mb_version, summary, mb_milestone,
-               mb_keywords, mb_description, TracTime ticketChangeTime))
-      = do
-        let ticketStatus = Identity New
-            ticketNumber = TicketNumber n
-            ticketCreator = reporter
-
-        let findOrig :: FromField a => Text -> a -> IO a
-            findOrig field def = fromMaybe def <$> findOrigField field ticketNumber
-
-            parseTicketList :: T.Text -> [TicketNumber]
-            parseTicketList = mapMaybe parseTicketNumber . T.words
-
-            parseTicketNumber :: T.Text -> Maybe TicketNumber
-            parseTicketNumber =
-                either (const Nothing) (Just . TicketNumber . fst) .
-                TR.decimal . T.dropWhile (=='#') . T.strip
-
-            parseDifferentials :: T.Text -> [Differential]
-            parseDifferentials = const [] -- TODO
-
-            i = Identity
-        ticketSummary <- i <$> findOrig "summary" summary
-        ticketComponent <- i <$> findOrig "component" component
-
-        ticketType <- i . toTicketType <$> findOrig "type" typ
-        ticketPriority <- i . toPriority <$> findOrig "priority" prio
-        ticketVersion <- i <$> findOrig "version" (fromMaybe "" mb_version)
-        ticketMilestone <- i <$> findOrig "milestone" (fromMaybe "" mb_milestone)
-        ticketKeywords <- i . T.words <$> findOrig "keywords" (fromMaybe "" mb_keywords)
-        ticketBlockedBy <- i . maybe [] parseTicketList <$> findOrigField "blockedby" ticketNumber
-        ticketRelated <- i . maybe [] parseTicketList <$> findOrigField "related" ticketNumber
-        ticketBlocking <- i . maybe [] parseTicketList <$> findOrigField "blocking" ticketNumber
-        ticketDifferentials <- i . maybe [] parseDifferentials <$> findOrigField "differential" ticketNumber
-        ticketTestCase <- i . fromMaybe "" <$> findOrigField "testcase" ticketNumber
-        ticketDescription <- i <$> findOrig "description" (fromMaybe "" mb_description)
-        ticketTypeOfFailure <- i . toTypeOfFailure <$> findOrig "failure" ""
-        let ticketFields = Fields {..}
-        return Ticket {..}
 
 getTicketChanges :: Connection -> TicketNumber -> Maybe RawTime -> IO [TicketChange]
 getTicketChanges conn n mtime = do
@@ -221,6 +167,7 @@ getTicketChanges conn n mtime = do
           "blocking"     -> fieldChange $ emptyFieldsUpdate{ticketBlocking = mkUpdate (fmap parseTicketList) old new}
           "blockedby"    -> fieldChange $ emptyFieldsUpdate{ticketBlockedBy = mkUpdate (fmap parseTicketList) old new}
           "related"      -> fieldChange $ emptyFieldsUpdate{ticketRelated = mkUpdate (fmap parseTicketList) old new}
+          "cc"           -> fieldChange $ emptyFieldsUpdate{ticketCC = mkUpdate (fmap T.words) old new}
 
           -- TODO: The other fields
 
