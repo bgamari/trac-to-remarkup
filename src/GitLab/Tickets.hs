@@ -60,6 +60,7 @@ data CreateIssue
                   , ciDescription :: Maybe Text
                   , ciMilestoneId :: Maybe (Maybe MilestoneId)
                   , ciWeight :: Maybe Weight
+                  , ciAssignees :: Maybe [UserId]
                   }
 
 instance ToJSON CreateIssue where
@@ -71,6 +72,7 @@ instance ToJSON CreateIssue where
         , "description" .= ciDescription
         , "milestone_id" .= ciMilestoneId
         , "weight" .= ciWeight
+        , "assignee_ids" .= ciAssignees
         ]
 
 type CreateIssueAPI =
@@ -97,6 +99,7 @@ data EditIssue
                 , eiStatus      :: Maybe StatusEvent
                 , eiUpdateTime  :: Maybe UTCTime
                 , eiWeight      :: Maybe Weight
+                , eiAssignees   :: Maybe [UserId]
                 }
     deriving (Show)
 
@@ -110,6 +113,7 @@ instance ToJSON EditIssue where
         , "state_event" .=? eiStatus
         , "updated_at" .=? eiUpdateTime
         , "weight" .=? eiWeight
+        , "assignee_ids" .=? eiAssignees
         ]
 
 type EditIssueAPI =
@@ -121,9 +125,9 @@ type EditIssueAPI =
     :> Put '[JSON] IssueResp
 
 nullEditIssue :: EditIssue -> Bool
-nullEditIssue (EditIssue a b c _ e _ g) =
+nullEditIssue (EditIssue a b c _ e _ g h) =
     isNothing a && isNothing b && isNothing c &&
-    isNothing e && isNothing g
+    isNothing e && isNothing g && isNothing h
     -- N.B. Ignore update time and labels
 
 editIssue :: AccessToken -> Maybe UserId

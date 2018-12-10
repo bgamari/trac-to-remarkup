@@ -479,7 +479,13 @@ createTicket milestoneMap getUserId commentCache t = do
             , fieldsTable extraRows fields
             ]
         fields = ticketFields t
-        iid = ticketNumberToIssueIid $ ticketNumber t
+    let owner = runIdentity . ticketOwner $ fields
+    ownerUid <- if T.null owner
+                  then
+                    pure Nothing
+                  else
+                    Just <$> getUserId owner
+    let iid = ticketNumberToIssueIid $ ticketNumber t
         issue = CreateIssue { ciIid = Just iid
                             , ciTitle = runIdentity $ ticketSummary fields
                             , ciLabels = Just $ fieldLabels $ hoistFields (Just . runIdentity) fields
@@ -487,6 +493,7 @@ createTicket milestoneMap getUserId commentCache t = do
                             , ciDescription = Just description
                             , ciMilestoneId = Just $ M.lookup (runIdentity $ ticketMilestone fields) milestoneMap
                             , ciWeight = Just $ prioToWeight $ runIdentity $ ticketPriority fields
+                            , ciAssignees = (:[]) <$> ownerUid
                             }
     let ignore404 (FailureResponse resp)
           | 404 <- statusCode $ responseStatusCode resp
@@ -643,6 +650,11 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                 (fmap Just . tracToMarkdown commentCache t)
                 (ticketDescription fields)
 
+    ownerUid <- maybe
+                  (pure Nothing)
+                  (fmap Just . getUserId)
+                  (ticketOwner fields)
+
     let edit = EditIssue { eiTitle = notNull $ ticketSummary fields
                          , eiDescription = description
                          , eiMilestoneId = fmap (`M.lookup` milestoneMap) (ticketMilestone fields)
@@ -650,6 +662,7 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                          , eiStatus = status
                          , eiUpdateTime = Just $ changeTime tc
                          , eiWeight = prioToWeight <$> ticketPriority fields
+                         , eiAssignees = (:[]) <$> ownerUid
                          }
     liftIO $ print edit
     meid <- if nullEditIssue edit

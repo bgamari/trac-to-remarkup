@@ -35,7 +35,7 @@ type Row =
     (Integer, Text, TracTime, Text,
      Text, Text, Text) :.
     (Maybe Text, Text, Maybe Text,
-     Maybe Text, Maybe Text, TracTime, Maybe Text)
+     Maybe Text, Maybe Text, TracTime, Maybe Text, Maybe Text)
 
 getTicket :: TicketNumber -> Connection -> IO (Maybe Ticket)
 getTicket (TicketNumber t) conn = do
@@ -44,7 +44,7 @@ getTicket (TicketNumber t) conn = do
                   priority, reporter, status,
                   version, summary, milestone,
                   keywords, description, changetime,
-                  cc
+                  cc, owner
            FROM ticket
            WHERE id = ?
           |]
@@ -74,7 +74,7 @@ toTicket conn
          ((n, typ, TracTime ticketCreationTime, component,
            prio, reporter, status) :.
           (mb_version, summary, mb_milestone,
-           mb_keywords, mb_description, TracTime ticketChangeTime, mb_cc))
+           mb_keywords, mb_description, TracTime ticketChangeTime, mb_cc, mb_owner))
   = do
     let ticketStatus = Identity New
         ticketNumber = TicketNumber n
@@ -97,6 +97,7 @@ toTicket conn
     ticketDescription <- i <$> findOrig conn "description" (fromMaybe "" mb_description) ticketNumber
     ticketTypeOfFailure <- i . toTypeOfFailure <$> findOrig conn "failure" "" ticketNumber
     ticketCC <- i . commaSep <$> findOrig conn "cc" (fromMaybe "" mb_cc) ticketNumber
+    ticketOwner <- i <$> findOrig conn "owner" (fromMaybe "" mb_owner) ticketNumber
     let ticketFields = Fields {..}
     return Ticket {..}
 
@@ -171,6 +172,7 @@ getTicketChanges conn n mtime = do
           "blockedby"    -> fieldChange $ emptyFieldsUpdate{ticketBlockedBy = mkUpdate (fmap parseTicketList) old new}
           "related"      -> fieldChange $ emptyFieldsUpdate{ticketRelated = mkUpdate (fmap parseTicketList) old new}
           "cc"           -> fieldChange $ emptyFieldsUpdate{ticketCC = mkUpdate (fmap commaSep) old new}
+          "owner"        -> fieldChange $ emptyFieldsUpdate{ticketOwner = mkUpdate id old new}
 
           -- TODO: The other fields
 
@@ -185,7 +187,6 @@ getTicketChanges conn n mtime = do
       where
         isSkippableField :: Text -> Bool
         isSkippableField "resolution" = True
-        isSkippableField "owner" = True
         isSkippableField x | "_comment" `T.isPrefixOf` x = True
         isSkippableField _ = False
 

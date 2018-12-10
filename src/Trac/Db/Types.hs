@@ -71,6 +71,7 @@ data Fields f = Fields { ticketType          :: f TicketType
                        , ticketTestCase      :: f Text
                        , ticketStatus        :: f Status
                        , ticketCC            :: f [Text]
+                       , ticketOwner         :: f Text
                        }
 
 hoistFields :: (forall a. f a -> g a) -> Fields f -> Fields g
@@ -91,6 +92,7 @@ hoistFields f Fields{..} =
            , ticketTestCase      = f ticketTestCase
            , ticketStatus        = f ticketStatus
            , ticketCC            = f ticketCC
+           , ticketOwner         = f ticketOwner
            }
 
 emptyFieldsOf :: (forall a. f a) -> Fields f
@@ -100,7 +102,7 @@ emptyFieldsOf x = Fields
     x x x
     x x x
     x x x
-    x
+    x x
 
 emptyFields :: Fields Maybe
 emptyFields = emptyFieldsOf Nothing
@@ -127,6 +129,7 @@ collapseFields a b =
            , ticketTestCase = ticketTestCase a <|> ticketTestCase b
            , ticketStatus = ticketStatus a <|> ticketStatus b
            , ticketCC = ticketCC a <|> ticketCC b
+           , ticketOwner = ticketOwner a <|> ticketOwner b
            }
 
 deriving instance Show (Fields Identity)
