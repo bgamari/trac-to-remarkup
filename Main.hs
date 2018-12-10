@@ -806,7 +806,7 @@ fieldsTable extraRows (f@Fields{..})
         , row "Test case" $ concatFields $ ticketTestCase
         , row "Differential revisions" $ concatFields $ renderTicketDifferentials <$> ticketDifferentials
         -- , row "Status" $ concatFields $ T.pack . show <$> ticketStatus
-        , row "Description" $ concatFields $ const "description changed" <$> concatFields ticketDescription
+        -- , row "Description" $ concatFields $ const "description changed" <$> concatFields ticketDescription
         -- , row "Keywords" $ concatFields $ T.intercalate ", " <$> ticketKeywords
         , row "BlockedBy" $ concatFields $ renderTicketNumbers <$> ticketBlockedBy
         , row "Related" $ concatFields $ renderTicketNumbers <$> ticketRelated
