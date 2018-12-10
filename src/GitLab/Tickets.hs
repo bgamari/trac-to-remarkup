@@ -320,20 +320,25 @@ listMilestones tok prj = client (Proxy :: Proxy ListMilestonesAPI) (Just tok) pr
 
 type CreateIssueLinkAPI =
     GitLabRoot :> "projects"
-    :> Capture "id" ProjectId :> "issues" :> Capture "iid" IssueIid :> "links"
+    :> Capture "id" ProjectId :> "issues"
+    :> Capture "issue_iid" IssueIid :> "links"
     :> ReqBody '[JSON] CreateIssueLink
     :> SudoParam
     :> Post '[JSON] CreateIssueLinkResp
 
 data CreateIssueLink
-    = CreateIssueLink { cilTargetProject :: ProjectId
+    = CreateIssueLink { cilProject :: ProjectId
+                      , cilIssue :: IssueIid
+                      , cilTargetProject :: ProjectId
                       , cilTargetIssue :: IssueIid
                       }
                       deriving (Show)
 
 instance ToJSON CreateIssueLink where
     toJSON CreateIssueLink{..} = object
-        [ "target_project_id" .= cilTargetProject
+        [ "project_id" .= cilProject
+        , "issue_iid" .= cilIssue
+        , "target_project_id" .= cilTargetProject
         , "target_issue_iid" .= cilTargetIssue
         ]
 

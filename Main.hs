@@ -584,6 +584,17 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
 
     -- Translate issue link lists to link/unlink events.
     withFieldDiff (ticketRelated $ changeFields tc) $ \toLink toUnlink -> do
+      forM_ toLink $ \(TicketNumber n) -> do
+        let otherIid = IssueIid . fromIntegral $ n
+        liftIO $ putStrLn $ "LINK ISSUES: " ++ show iid ++ " <-> " ++ show otherIid
+        linkResult <- createIssueLink
+          gitlabToken
+          (Just authorUid)
+          project
+          iid
+          (CreateIssueLink project iid project otherIid)
+        liftIO $ putStrLn $ "LINKED: " ++ show linkResult
+          
       liftIO $ do
         putStrLn $ "LINK: " ++ (show toLink)
         putStrLn $ "UNLINK: " ++ (show toUnlink)
