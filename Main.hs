@@ -640,7 +640,7 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
 
     -- Update our comment cache. Depending on what we did above, we pick an
     -- apppropriate note reference (pointing to a Note, a Commit, or marking
-    -- the comment as missing), and append it both to the in-memory store and
+    -- the comment as missing), and append it to both the in-memory store and
     -- the state file.
     liftIO $ do
       let mid = fromMaybe MissingCommentRef $ mcinId <|> meid <|> mhash
