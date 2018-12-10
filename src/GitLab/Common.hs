@@ -37,6 +37,9 @@ newtype AccessToken = AccessToken Text
 newtype MilestoneId = MilestoneId Int
                     deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData)
 
+newtype IssueLinkId = IssueLinkId Int
+                    deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData)
+
 newtype ProjectId = ProjectId Int
                   deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData)
 

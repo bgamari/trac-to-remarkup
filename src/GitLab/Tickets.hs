@@ -312,3 +312,66 @@ instance FromJSON Milestone where
 listMilestones :: AccessToken
                -> ProjectId -> ClientM [Milestone]
 listMilestones tok prj = client (Proxy :: Proxy ListMilestonesAPI) (Just tok) prj (Just 100)
+
+
+----------------------------------------------------------------------
+-- createIssueLink
+----------------------------------------------------------------------
+
+type CreateIssueLinkAPI =
+    GitLabRoot :> "projects"
+    :> Capture "id" ProjectId :> "issues" :> Capture "iid" IssueIid :> "links"
+    :> ReqBody '[JSON] CreateIssueLink
+    :> SudoParam
+    :> Post '[JSON] CreateIssueLinkResp
+
+data CreateIssueLink
+    = CreateIssueLink { cilTargetProject :: ProjectId
+                      , cilTargetIssue :: IssueIid
+                      }
+                      deriving (Show)
+
+instance ToJSON CreateIssueLink where
+    toJSON CreateIssueLink{..} = object
+        [ "target_project_id" .= cilTargetProject
+        , "target_issue_iid" .= cilTargetIssue
+        ]
+
+data CreateIssueLinkResp = CreateIssueLinkResp IssueLinkId
+
+instance FromJSON CreateIssueLinkResp where
+    parseJSON = withObject "create issueLink response" $ \o -> do
+        CreateIssueLinkResp <$> o .: "id"
+
+createIssueLink :: AccessToken -> Maybe UserId
+                -> ProjectId -> IssueIid
+                -> CreateIssueLink
+                -> ClientM IssueLinkId
+createIssueLink tok sudo prj iid cm = do
+    liftIO $ putStrLn $ "Create issueLink: " ++ show cm
+    CreateIssueLinkResp mid <- client (Proxy :: Proxy CreateIssueLinkAPI) (Just tok) prj iid cm sudo
+    return mid
+
+----------------------------------------------------------------------
+-- listIssueLinks
+----------------------------------------------------------------------
+
+type ListIssueLinksAPI =
+    GitLabRoot :> "projects"
+    :> Capture "id" ProjectId :> "issue" :> Capture "iid" IssueIid :> "links"
+    :> QueryParam "per_page" Int
+    :> Get '[JSON] [IssueLink]
+
+data IssueLink = IssueLink IssueLinkId ProjectId IssueIid
+
+instance FromJSON IssueLink where
+    parseJSON = withObject "issueLink" $ \o -> do
+        IssueLink <$> o .: "issue_link_id"
+                  <*> o .: "project_id"
+                  <*> o .: "iid"
+
+listIssueLinks :: AccessToken
+               -> ProjectId
+               -> IssueIid
+               -> ClientM [IssueLink]
+listIssueLinks tok prj iid = client (Proxy :: Proxy ListIssueLinksAPI) (Just tok) prj iid (Just 100)
