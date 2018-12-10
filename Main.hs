@@ -582,6 +582,11 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                       "NOTE CREATED: " ++ show commentNumber ++ " -> " ++ show cinResp
                     return (Just . NoteRef . inrId $ cinResp)
 
+    -- Translate issue link lists to link/unlink events.
+    withFieldDiff (ticketRelated $ changeFields tc) $ \toLink toUnlink -> do
+      liftIO $ do
+        putStrLn $ "LINK: " ++ (show toLink)
+        putStrLn $ "UNLINK: " ++ (show toUnlink)
 
     -- Translate CC field changes to subscribe/unsubscribe events.
     withFieldDiff (ticketCC $ changeFields tc) $ \toSubscribe toUnsubscribe -> do
