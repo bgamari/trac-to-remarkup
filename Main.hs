@@ -568,6 +568,17 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                       "NOTE CREATED: " ++ show commentNumber ++ " -> " ++ show cinResp
                     return (Just . NoteRef . inrId $ cinResp)
 
+    -- Translate CC field changes to subscribe/unsubscribe events.
+    when (isJust . newValue . ticketCC . changeFields $ tc) $ do
+      let old = maybe S.empty S.fromList . oldValue . ticketCC . changeFields $ tc
+          new = maybe S.empty S.fromList . newValue . ticketCC . changeFields $ tc
+          toSubscribe = S.difference new old
+          toUnsubscribe = S.difference old new
+      liftIO $ do
+        putStrLn $ "CC: " ++ (show . S.toList $ new)
+        putStrLn $ "SUBSCRIBE: " ++ (show . S.toList $ toSubscribe)
+        putStrLn $ "UNSUBSCRIBE: " ++ (show . S.toList $ toUnsubscribe)
+
     -- Field updates. Figure out which fields to update.
     let fields = hoistFields newValue $ changeFields tc
     let status = case ticketStatus fields of
