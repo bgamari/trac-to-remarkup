@@ -515,6 +515,20 @@ isCommitComment tc =
   isJust (changeComment tc) &&
   isJust (T.find (== '@') $ changeAuthor tc)
 
+withFieldDiff :: Ord a => Update [a] -> ([a] -> [a] -> ClientM b) -> ClientM (Maybe b)
+withFieldDiff (Update old new) handler =
+  if isJust new
+    then do
+      let oldSet = maybe S.empty S.fromList old
+          newSet = maybe S.empty S.fromList new
+      let toAddSet = S.difference newSet oldSet
+          toRemoveSet = S.difference oldSet newSet
+          toAdd = S.toList toAddSet
+          toRemove = S.toList toRemoveSet
+      Just <$> handler toAdd toRemove
+    else
+      return Nothing
+ 
 createTicketChanges :: MilestoneMap
                     -> UserIdOracle
                     -> CommentCacheVar
@@ -568,16 +582,12 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                       "NOTE CREATED: " ++ show commentNumber ++ " -> " ++ show cinResp
                     return (Just . NoteRef . inrId $ cinResp)
 
+
     -- Translate CC field changes to subscribe/unsubscribe events.
-    when (isJust . newValue . ticketCC . changeFields $ tc) $ do
-      let old = maybe S.empty S.fromList . oldValue . ticketCC . changeFields $ tc
-          new = maybe S.empty S.fromList . newValue . ticketCC . changeFields $ tc
-          toSubscribe = S.difference new old
-          toUnsubscribe = S.difference old new
+    withFieldDiff (ticketCC $ changeFields tc) $ \toSubscribe toUnsubscribe -> do
       liftIO $ do
-        putStrLn $ "CC: " ++ (show . S.toList $ new)
-        putStrLn $ "SUBSCRIBE: " ++ (show . S.toList $ toSubscribe)
-        putStrLn $ "UNSUBSCRIBE: " ++ (show . S.toList $ toUnsubscribe)
+        putStrLn $ "SUBSCRIBE: " ++ (show toSubscribe)
+        putStrLn $ "UNSUBSCRIBE: " ++ (show toUnsubscribe)
 
     -- Field updates. Figure out which fields to update.
     let fields = hoistFields newValue $ changeFields tc
