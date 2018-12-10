@@ -336,7 +336,7 @@ data CreateIssueLink
 
 instance ToJSON CreateIssueLink where
     toJSON CreateIssueLink{..} = object
-        [ "project_id" .= cilProject
+        [ "id" .= cilProject
         , "issue_iid" .= cilIssue
         , "target_project_id" .= cilTargetProject
         , "target_issue_iid" .= cilTargetIssue
