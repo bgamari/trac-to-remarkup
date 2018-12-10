@@ -380,3 +380,40 @@ listIssueLinks :: AccessToken
                -> IssueIid
                -> ClientM [IssueLink]
 listIssueLinks tok prj iid = client (Proxy :: Proxy ListIssueLinksAPI) (Just tok) prj iid (Just 100)
+
+----------------------------------------------------------------------
+-- subscribeIssue
+----------------------------------------------------------------------
+
+type SubscribeIssueAPI =
+    GitLabRoot :> "projects"
+    :> Capture "id" ProjectId :> "issues"
+    :> Capture "issue_iid" IssueIid :> "subscribe"
+    :> ReqBody '[JSON] SubscribeIssue
+    :> SudoParam
+    :> Post '[JSON] SubscribeIssueResp
+
+data SubscribeIssue
+    = SubscribeIssue
+        deriving (Show)
+
+instance ToJSON SubscribeIssue where
+    toJSON SubscribeIssue = object
+        []
+
+data SubscribeIssueResp = SubscribeIssueResp
+
+instance FromJSON SubscribeIssueResp where
+    parseJSON = withObject "subscribe response" $ \o -> do
+        pure SubscribeIssueResp
+
+subscribeIssue :: AccessToken
+                -> Maybe UserId
+                -> ProjectId
+                -> IssueIid
+                -> ClientM ()
+subscribeIssue tok sudo prj iid = do
+    liftIO $ putStrLn $ "Subscribe to issue: " ++ show iid
+    SubscribeIssueResp <- client (Proxy :: Proxy SubscribeIssueAPI) (Just tok) prj iid SubscribeIssue sudo
+    return ()
+

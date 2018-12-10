@@ -601,6 +601,22 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
 
     -- Translate CC field changes to subscribe/unsubscribe events.
     withFieldDiff (ticketCC $ changeFields tc) $ \toSubscribe toUnsubscribe -> do
+      forM_ toSubscribe $ \subscribeUsername -> do
+        liftIO $ putStrLn $ "SUBSCRIBE USER: " ++ show subscribeUsername
+        uid <-
+          (findUserByUsername gitlabToken subscribeUsername >>= \case
+            Just u -> pure $ userId u
+            Nothing -> do
+              findUserByEmail gitlabToken subscribeUsername >>= \case
+                Just u -> pure $ userId u
+                Nothing -> error $ "User not found: " ++ show subscribeUsername
+          )
+        result <- subscribeIssue
+                    gitlabToken
+                    (Just uid)
+                    project
+                    iid
+        liftIO $ putStrLn $ "SUBSCRIBED: " ++ show result
       liftIO $ do
         putStrLn $ "SUBSCRIBE: " ++ (show toSubscribe)
         putStrLn $ "UNSUBSCRIBE: " ++ (show toUnsubscribe)
