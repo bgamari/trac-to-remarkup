@@ -28,9 +28,10 @@ instance Exception GitException where
       gitExcStderr
 
 -- | Make a raw call to git
-gitRaw :: String -> [String] -> String -> IO String
-gitRaw cmd args inp = do
-  (errno, out, err) <- readProcessWithExitCode "git" (cmd:args) inp
+gitRaw :: [String] -> String -> IO String
+gitRaw args inp = do
+  printf "git %s\n" (unwords args)
+  (errno, out, err) <- readProcessWithExitCode "git" args inp
   case errno of
     ExitSuccess -> return out
     ExitFailure i -> throw $ GitException i out err
@@ -40,13 +41,13 @@ clone :: Remote -> IO WorkingCopy
 clone remote = do
   tmpdir <- getCanonicalTemporaryDirectory
   dirname <- createTempDirectory tmpdir "git"
-  gitRaw "clone" [remote, dirname] ""
+  gitRaw ["clone", remote, dirname] ""
   return dirname
 
 -- | Run a git subcommand in the given working copy
 git :: WorkingCopy -> String -> [String] -> String -> IO String
 git w cmd args inp =
-  gitRaw cmd (["-C", w] ++ args) inp
+  gitRaw (["-C", w] ++ (cmd:args)) inp
 
 git_ :: WorkingCopy -> String -> [String] -> IO String
 git_ w cmd args = git w cmd args ""

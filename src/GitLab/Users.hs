@@ -88,9 +88,13 @@ type FindUserByUsernameAPI =
     :> QueryParam "username" Text
     :> Get '[JSON] [User]
 
+findUsersByUsername :: AccessToken -> Text -> ClientM [User]
+findUsersByUsername tok username =
+    client (Proxy :: Proxy FindUserByUsernameAPI) (Just tok) (Just username)
+
 findUserByUsername :: AccessToken -> Text -> ClientM (Maybe User)
 findUserByUsername tok username = do
-    res <- client (Proxy :: Proxy FindUserByUsernameAPI) (Just tok) (Just username)
+    res <- findUsersByUsername tok username
     return $ case res of
                [] -> Nothing
                [user] -> Just user
@@ -107,11 +111,15 @@ type FindUserByEmailAPI =
 
 findUserByEmail :: AccessToken -> Text -> ClientM (Maybe User)
 findUserByEmail tok email = do
-    res <- client (Proxy :: Proxy FindUserByEmailAPI) (Just tok) (Just email)
+    res <- findUsersByEmail tok email
     return $ case res of
                [] -> Nothing
                [user] -> Just user
                _ -> error $ "Multiple users with email "<>show email
+
+findUsersByEmail :: AccessToken -> Text -> ClientM [User]
+findUsersByEmail tok email = do
+    client (Proxy :: Proxy FindUserByEmailAPI) (Just tok) (Just email)
 
 
 ----------------------------------------------------------------------

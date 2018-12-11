@@ -9,23 +9,24 @@ import Data.List
 import qualified Data.Map as M
 import Debug.Trace
 import Data.Maybe
+import Control.Applicative
 
 type LookupComment = Int -> Int -> IO CommentRef
 
-convert :: String -> String -> String -> Int -> LookupComment -> String -> IO String
-convert base org proj n cm s =
+convert :: String -> String -> String -> Maybe Int -> LookupComment -> String -> IO String
+convert base org proj mn cm s =
     fmap (writeRemarkup base org proj)
-    $ convertBlocks n cm
+    $ convertBlocks mn cm
     $ either (\err -> [R.Para [R.Str "NO PARSE: ", R.Str $ show err, R.Str s]]) id
     $ R.parseTrac
     $ s
 
 -- convertWithError org proj n cm s = writeRemarkup org proj . convertBlocks n cm <$> R.parseTrac s
 
-convertBlocks :: Int -> LookupComment -> [R.Block] -> IO [Block]
+convertBlocks :: Maybe Int -> LookupComment -> [R.Block] -> IO [Block]
 convertBlocks n cm = mapM (convertBlock n cm)
 
-convertBlock :: Int -> LookupComment -> R.Block -> IO Block
+convertBlock :: Maybe Int -> LookupComment -> R.Block -> IO Block
 convertBlock n cm (R.Header nlev is bs)
   = Header nlev <$> convertInlines n cm is <*> convertBlocks n cm bs
 convertBlock n cm (R.Para is)        = Para <$> convertInlines n cm is
@@ -37,39 +38,39 @@ convertBlock n cm (R.Discussion bs)  = Quote <$> convertBlocks n cm bs
 convertBlock n cm (R.Table rs)       = Table <$> convertTableRows n cm rs
 convertBlock _ _ R.HorizontalLine    = pure HorizontalLine
 
-convertTableRows :: Int -> LookupComment -> [R.TableRow] -> IO [TableRow]
+convertTableRows :: Maybe Int -> LookupComment -> [R.TableRow] -> IO [TableRow]
 convertTableRows n cm = mapM (convertTableRow n cm)
 
-convertTableRow :: Int -> LookupComment -> R.TableRow -> IO TableRow
+convertTableRow :: Maybe Int -> LookupComment -> R.TableRow -> IO TableRow
 convertTableRow n cm = mapM (convertTableCell n cm)
 
-convertTableCell :: Int -> LookupComment -> R.TableCell -> IO TableCell
+convertTableCell :: Maybe Int -> LookupComment -> R.TableCell -> IO TableCell
 convertTableCell n cm (R.TableHeaderCell is) = TableHeaderCell <$> convertInlines n cm is
 convertTableCell n cm (R.TableCell is) = TableCell <$> convertInlines n cm is
 
-convertDefnListToTable :: Int -> LookupComment -> [(R.Inlines, [R.Inlines])] -> IO Block
+convertDefnListToTable :: Maybe Int -> LookupComment -> [(R.Inlines, [R.Inlines])] -> IO Block
 convertDefnListToTable n cm [] = pure $ Para []
 convertDefnListToTable n cm items = Table . mconcat <$> mapM (convertDefnToTableRows n cm) items
 
-convertDefnToTableRows :: Int -> LookupComment -> (R.Inlines, [R.Inlines]) -> IO [TableRow]
+convertDefnToTableRows :: Maybe Int -> LookupComment -> (R.Inlines, [R.Inlines]) -> IO [TableRow]
 convertDefnToTableRows n cm (dh, []) = (:[]) . (:[]) . TableHeaderCell <$> convertInlines n cm dh
 convertDefnToTableRows n cm (dh, dd:dds) = (:) <$> convertFirstDefnRow n cm dh dd <*> convertAdditionalDefnRows n cm dds
 
-convertFirstDefnRow :: Int -> LookupComment -> R.Inlines -> R.Inlines -> IO TableRow
+convertFirstDefnRow :: Maybe Int -> LookupComment -> R.Inlines -> R.Inlines -> IO TableRow
 convertFirstDefnRow n cm dh dd =
   sequence
     [ TableHeaderCell <$> convertInlines n cm dh
     , TableCell <$> convertInlines n cm dd
     ]
 
-convertAdditionalDefnRow :: Int -> LookupComment -> R.Inlines -> IO TableRow
+convertAdditionalDefnRow :: Maybe Int -> LookupComment -> R.Inlines -> IO TableRow
 convertAdditionalDefnRow n cm dd =
   sequence
     [ pure $ TableCell []
     , TableCell <$> convertInlines n cm dd
     ]
 
-convertAdditionalDefnRows :: Int -> LookupComment -> [R.Inlines] -> IO [TableRow]
+convertAdditionalDefnRows :: Maybe Int -> LookupComment -> [R.Inlines] -> IO [TableRow]
 convertAdditionalDefnRows n cm = mapM (convertAdditionalDefnRow n cm)
 
 convertInlines n cm = mapM (convertInline n cm)
@@ -78,7 +79,7 @@ prettyCommit :: CommitHash -> Maybe RepoName -> [Inline]
 prettyCommit hash Nothing = [Str $ take 7 hash]
 prettyCommit hash (Just repo) = [Str repo, Str ":", Str $ take 7 hash]
 
-convertInline :: Int -> LookupComment -> R.Inline -> IO Inline
+convertInline :: Maybe Int -> LookupComment -> R.Inline -> IO Inline
 convertInline n cm (R.Bold is) = Bold <$> convertInlines n cm is
 convertInline n cm (R.Monospaced ty is) = pure (Monospaced ty is)
 convertInline n cm (R.Italic is) = Italic <$> convertInlines n cm is
@@ -95,15 +96,21 @@ convertInline _ _ (R.DifferentialLink n) =
 convertInline _ _ (R.TracTicketLink n desc) =
   pure $ TicketLink (fmap (map Str) desc) n Nothing
 convertInline n cm (R.CommentLink mt c mlabel) = do
-  let ticketN = fromMaybe n mt
+  let mticketN = mt <|> n
       mlabelInline = fmap (map Str) mlabel
-  cm ticketN c >>= \case
-      NoteRef t ->
-        pure (TicketLink mlabelInline ticketN (Just t))
-      CommitRef hash mrepo ->
-        pure $ GitCommitLink (fromMaybe (prettyCommit hash mrepo) mlabelInline) hash mrepo
-      MissingCommentRef ->
-        traceShow
-          ("COULD NOT FIND", n, mt, c)
-          (pure $ TicketLink mlabelInline ticketN Nothing)
+  case mticketN of
+    Nothing ->
+      traceShow
+        ("NO TICKET NUMBER", n, mt, c)
+        (pure . Str $ fromMaybe "?" (unwords <$> mlabel))
+    Just ticketN ->
+      cm ticketN c >>= \case
+        (NoteRef t) ->
+            pure (TicketLink mlabelInline ticketN (Just t))
+        (CommitRef hash mrepo) ->
+          pure $ GitCommitLink (fromMaybe (prettyCommit hash mrepo) mlabelInline) hash mrepo
+        MissingCommentRef ->
+          traceShow
+            ("COULD NOT FIND", n, mt, c)
+            (pure $ TicketLink mlabelInline ticketN Nothing)
 convertInline _ _ e = error $ "not handled"  ++ show e

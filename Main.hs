@@ -32,11 +32,16 @@ import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as TE
 import System.IO
 import System.Directory
+import System.FilePath
 import System.Environment
 import Debug.Trace
+import Text.Printf (printf)
+import Data.Time
+import Data.Time.Format
 
 import Database.PostgreSQL.Simple
 import Network.HTTP.Client.TLS as TLS
@@ -163,7 +168,7 @@ main = do
     (commentCache, storeComment) <- openCommentCacheFile commentCacheFile
 
     putStrLn "Making wiki"
-    buildWiki conn
+    runClientM (buildWiki commentCache conn) env
 
     putStrLn "Making tickets"
     mutations <- filter (\m -> not $ m `S.member` finishedMutations) .
@@ -332,9 +337,9 @@ makeMilestones actuallyMakeThem conn = do
                               }
         return $ M.singleton mName mid
 
-    onError :: (MonadIO m, Show a) => a -> m MilestoneMap
+    onError :: (MonadIO m, Exception a) => a -> m MilestoneMap
     onError err = do
-        liftIO $ putStrLn $ "Failed to create milestone: " ++ show err
+        liftIO $ putStrLn $ "Failed to create milestone: " ++ displayException err
         return M.empty
 
 makeAttachment :: UserIdOracle -> Attachment -> ClientM ()
@@ -457,7 +462,7 @@ tracToMarkdown commentCache (TicketNumber n) src =
         (showBaseUrl gitlabBaseUrl)
         gitlabOrganisation
         gitlabProjectName
-        (fromIntegral n)
+        (Just $ fromIntegral n)
         getCommentId
         (T.unpack src)
       where
@@ -512,13 +517,44 @@ createTicket milestoneMap getUserId commentCache t = do
     liftIO $ print ir
     return $ irIid ir
 
-buildWiki :: Connection -> IO ()
-buildWiki conn = do
-  wc <- Git.clone wikiRemoteUrl
-  putStrLn $ "Building wiki in " ++ wc
-  pages <- getWikiPages conn
+buildWiki :: CommentCacheVar -> Connection -> ClientM ()
+buildWiki commentCache conn = do
+  wc <- liftIO $ Git.clone wikiRemoteUrl
+  liftIO $ putStrLn $ "Building wiki in " ++ wc
+  pages <- liftIO $ getWikiPages conn
   forM_ pages $ \WikiPage{..} -> do
-    putStrLn $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
+    liftIO $ putStrLn $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
+    let filename = wc </> T.unpack wpName <.> "md"
+    liftIO $ createDirectoryIfMissing True (takeDirectory filename)
+    mdBody <- liftIO $ Trac.Convert.convert
+                (showBaseUrl gitlabBaseUrl)
+                gitlabOrganisation
+                gitlabProjectName
+                Nothing
+                getCommentId
+                (T.unpack wpBody)
+    liftIO $ writeFile filename mdBody
+    -- TODO: deal with "multiple users..." error
+    User{..} <- do
+      findUsersByUsername gitlabToken wpAuthor >>= \case
+        user:_ ->
+          pure user
+        _ ->
+          findUsersByEmail gitlabToken wpAuthor >>= \case
+            user:_ -> pure user
+            _ ->
+              error $ "Author not matched: " ++ T.unpack wpAuthor
+    let juserEmail = fromMaybe ("trac-" ++ T.unpack userUsername ++ "@haskell.org") (T.unpack <$> userEmail)
+    let commitAuthor = printf "%s <%s>" userName juserEmail
+    let commitDate = formatTime defaultTimeLocale (iso8601DateFormat Nothing) wpTime
+    let msg = fromMaybe ("Edit " ++ T.unpack wpName) (T.unpack <$> wpComment)
+    liftIO $ git_ wc
+      "add" [filename]
+    liftIO $ git_ wc
+      "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate]
+    where
+      getCommentId :: Int -> Int -> IO CommentRef
+      getCommentId t c = fromMaybe MissingCommentRef . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
 
 ticketNumberToIssueIid (TicketNumber n) =
   IssueIid $ fromIntegral n
