@@ -219,6 +219,15 @@ data AttachmentResource = TicketAttachment !TicketNumber
                         | WikiAttachment !WikiName
                         deriving (Ord, Eq, Show, Read)
 
+data WikiPage = WikiPage { wpName :: Text
+                         , wpTime :: UTCTime
+                         , wpVersion :: Int
+                         , wpBody :: Text
+                         , wpComment :: Maybe Text
+                         , wpAuthor :: Text
+                         }
+              deriving (Show, Read)
+
 data CommentRef = MissingCommentRef
                 | NoteRef Int
                 | CommitRef CommitHash (Maybe RepoName)

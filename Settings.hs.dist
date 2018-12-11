@@ -38,3 +38,6 @@ dsn :: ByteString
 -- | Base URL for the Trac instance that holds the original data.
 tracBaseUrl :: BaseUrl
 tracBaseUrl = BaseUrl Https "ghc.haskell.org" 443 "/trac/ghc"
+
+wikiRemoteUrl :: String
+wikiRemoteUrl = "git@gitlab.server:ghc/ghc.wiki.git"

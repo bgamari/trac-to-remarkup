@@ -321,3 +321,14 @@ getAttachments conn = do
           "wiki"   -> Just $ WikiAttachment $ WikiName rid
           "blog"   -> Nothing
           _        -> error $ "Unknown attachment resource type " ++ show typ
+
+getWikiPages :: Connection -> IO [WikiPage]
+getWikiPages conn = do
+  mapMaybe f <$> query_ conn
+        [sql|SELECT name, time, version, author, text, comment
+             FROM wiki
+             ORDER BY time, version |]
+  where
+    f :: (Text, TracTime, Int, Text, Text, Maybe Text) -> Maybe WikiPage
+    f (name, TracTime time, version, author, text, mcomment) =
+      Just $ WikiPage name time version text mcomment author

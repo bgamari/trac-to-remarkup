@@ -19,7 +19,8 @@ library
                       Trac.Convert,
                       Trac.Db,
                       Trac.Db.Types,
-                      Trac.Web
+                      Trac.Web,
+                      Git
   build-depends:       base >=4.9 && <4.13,
                        bytestring,
                        megaparsec > 5 && < 6,
@@ -27,8 +28,10 @@ library
                        mtl,
                        text,
                        containers,
+                       temporary,
                        time,
                        postgresql-simple,
+                       process,
                        aeson,
                        process,
                        servant,

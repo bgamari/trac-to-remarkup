@@ -44,6 +44,9 @@ import Network.Connection (TLSSettings(..))
 import Network.HTTP.Types.Status
 import Servant.Client
 
+import qualified Git 
+import Git (git, git_)
+
 import GitLab.Tickets
 import GitLab.Common
 import GitLab.Project
@@ -148,6 +151,7 @@ main = do
         opts = S.fromList . filter (isPrefixOf "-") $ args
         skipMilestones = "-skip-milestones" `S.member` opts
         skipAttachments = "-skip-attachments" `S.member` opts
+        skipWiki = "-skip-wiki" `S.member` opts
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
@@ -157,6 +161,9 @@ main = do
     (finishedMutations, finishMutation) <- openStateFile mutationStateFile
 
     (commentCache, storeComment) <- openCommentCacheFile commentCacheFile
+
+    putStrLn "Making wiki"
+    buildWiki conn
 
     putStrLn "Making tickets"
     mutations <- filter (\m -> not $ m `S.member` finishedMutations) .
@@ -504,6 +511,14 @@ createTicket milestoneMap getUserId commentCache t = do
     ir <- createIssue gitlabToken (Just creatorUid) project issue
     liftIO $ print ir
     return $ irIid ir
+
+buildWiki :: Connection -> IO ()
+buildWiki conn = do
+  wc <- Git.clone wikiRemoteUrl
+  putStrLn $ "Building wiki in " ++ wc
+  pages <- getWikiPages conn
+  forM_ pages $ \WikiPage{..} -> do
+    putStrLn $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
 
 ticketNumberToIssueIid (TicketNumber n) =
   IssueIid $ fromIntegral n
