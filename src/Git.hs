@@ -4,6 +4,7 @@ where
 
 import System.Exit
 import System.Process
+import System.IO
 import System.IO.Temp
 import Control.Exception
 import Text.Printf (printf)
@@ -23,14 +24,16 @@ data GitException =
 instance Exception GitException where
   displayException GitException{..} =
     printf
-      "git exception: subprocess exited with exit code %d\n%s"
+      "git exception: git exited with exit code %d\n%s\n%s"
       gitExcExitCode
+      gitExcStdout
       gitExcStderr
 
 -- | Make a raw call to git
 gitRaw :: [String] -> String -> IO String
 gitRaw args inp = do
   printf "git %s\n" (unwords args)
+  hFlush stdout
   (errno, out, err) <- readProcessWithExitCode "git" args inp
   case errno of
     ExitSuccess -> return out

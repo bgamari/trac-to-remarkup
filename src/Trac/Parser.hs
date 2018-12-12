@@ -6,37 +6,31 @@
 module Trac.Parser where
 
 --import Pandoc.Types
-import Text.Megaparsec hiding (space)
-import Text.Megaparsec.String
-import Text.Megaparsec.Combinator
---import Text.Pandoc.Parsing
+import Text.Megaparsec hiding (space, some)
 --import Debug.Trace
 import Debug.NoTrace
 
 import Control.Applicative (empty)
 import Control.Monad (void)
-import Text.Megaparsec hiding (space)
-import Text.Megaparsec.String
-import qualified Text.Megaparsec.Lexer as L
+import qualified Text.Megaparsec.Char.Lexer as L
+import Text.Megaparsec.Char (anyChar, string, char, oneOf, noneOf, satisfy, newline, spaceChar)
+import qualified Text.Megaparsec.Char as C
 
 import Control.Applicative ((<|>), some, optional)
 import Control.Monad (void)
-import Data.Char (readLitChar)
+import Data.Char (readLitChar, isSpace)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe (listToMaybe, fromMaybe, isJust)
-
-import Text.Megaparsec.Combinator
-import Text.Megaparsec.Error
-import Text.Megaparsec.Pos
-import Text.Megaparsec.Prim
-import qualified Text.Megaparsec.Char as C
 import Data.Maybe
+import Data.Void
 
 class Walk p c where
   walk :: (c -> Maybe a) -> p -> [a]
 
 instance Walk a b => Walk [a] b where
   walk f = concatMap (walk f)
+
+type Parser = Parsec Void String
 
 normaliseNewlines :: String -> String
 normaliseNewlines ('\r':'\n':xs) = '\n': normaliseNewlines xs
@@ -107,8 +101,12 @@ instance Walk TableCell Inline where
 
 type Document = [Block]
 
-parseTrac :: String -> Either (ParseError Char Dec) [Block]
-parseTrac s = (runParser (blocks) "" (normaliseNewlines s))
+parseTrac :: Maybe String -> String -> Either (ParseError Char Void) [Block]
+parseTrac msrcname s =
+  runParser blocks srcname sn
+  where
+    sn = normaliseNewlines s
+    srcname = fromMaybe "" msrcname
 
 
 testParser :: Parser a -> String -> a
@@ -123,11 +121,12 @@ blocks = do header <|> para <|> list <|> defn <|> code <|> quote
 inlines = some inline
 
 inline :: Parser Inline
-inline = inlineNoNL <|> endline
+inline = do
+  notFollowedBy (newline >> newline)
+  inlineNoNL <|> endline
 
 inlineNoNL :: Parser Inline
 inlineNoNL = do
-             --getInput >>= traceShowM
              choice [ commentLink
                     , tracTicketLink
                     , bold
@@ -139,8 +138,8 @@ inlineNoNL = do
                     , monospaced2
                     , space
                     , str
-                    , symbol ]
-
+                    , symbol
+                    ]
 
 
 bold = try bold1 <|> try bold2
@@ -306,20 +305,17 @@ parser :: Parser [Block]
 parser = pItemListStart *> pItemList <* eof
 
 defnList :: Parser Block
-defnList = do
-  getInput >>= \s -> traceShowM ("defnList", take 5 $ s)
+defnList = try $ do
   let getOne = do
         d <- defnItem
-        traceM "dlist"
         many blankline
-        traceM "dlist1"
         return d
   DefnList <$> some getOne
 
 
 defnItem :: Parser (Inlines, [Inlines])
 defnItem = try $ do
- L.indentGuard sc GT (unsafePos 1)
+ L.indentGuard sc GT pos1
 -- traceM "here"
  defn <- someTill inline (lexeme(string "::"))
 -- traceM "here2"
@@ -334,7 +330,7 @@ defnItem = try $ do
 
  iss <- many (do
           notFollowedBy defnItem
-          L.indentGuard sc GT (unsafePos 1) >> (some inlineNoNL) <* optional newline)
+          L.indentGuard sc GT pos1 >> (some inlineNoNL) <* optional newline)
  traceM "here3c"
 -- traceM "here4"
  traceShowM (defn, mis, iss)
@@ -342,13 +338,14 @@ defnItem = try $ do
 
 
 table :: Parser Block
-table = try $ do
-  getInput >>= \s -> traceShowM ("table", s)
-  Table <$> some tableRow
+table = do
+  try $ do
+    getInput >>= \s -> traceShowM ("table", s)
+    Table <$> some tableRow
   
 tableRow :: Parser TableRow
 tableRow = do
-  try (string "||") *> many tableCell <* newline
+  try (string "||") *> manyTill (try tableCell) newline
 
 tableCell :: Parser TableCell
 tableCell = tableHeaderCell <|> tableRegularCell
@@ -405,6 +402,7 @@ link = longhandLink <|> shorthandLink
 shorthandLink :: Parser Inline
 shorthandLink = do
   try (char '[')
+  notFollowedBy (satisfy isSpace)
   l <- many (noneOf "]\n ")
   f <- makeLink l
   desc <- words <$> manyTill (noneOf "]\n") (char ']')
@@ -413,10 +411,19 @@ shorthandLink = do
 longhandLink :: Parser Inline
 longhandLink = do
   try (string "[[")
-  l <- manyTill anyChar (char '|')
-  f <- makeLink l
-  desc <- words <$> manyTill (noneOf "]\n") (string "]]")
-  return $ f desc
+  withoutDesc <|> withDesc
+  where
+    withoutDesc = do
+      l <- try $ manyTill anyChar (try $ string "]]")
+      f <- makeLink l
+      let desc = words l
+      return $ f desc
+
+    withDesc = do
+      l <- manyTill anyChar (char '|')
+      f <- makeLink l
+      desc <- words <$> manyTill (noneOf "]\n") (string "]]")
+      return $ f desc
 
 emptyToNothing :: [a] -> Maybe [a]
 emptyToNothing [] = Nothing

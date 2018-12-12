@@ -1,6 +1,6 @@
 {-#LANGUAGE LambdaCase #-}
 
-module Trac.Convert (convert, CommentMap, LookupComment) where
+module Trac.Convert (convert, convertIgnoreErrors, CommentMap, LookupComment) where
 
 import qualified Trac.Parser as R
 import Trac.Writer
@@ -10,16 +10,38 @@ import qualified Data.Map as M
 import Debug.Trace
 import Data.Maybe
 import Control.Applicative
+import Control.Exception
+import Text.Megaparsec.Error (ParseError, parseErrorPretty)
+import Data.Void
 
 type LookupComment = Int -> Int -> IO CommentRef
 
-convert :: String -> String -> String -> Maybe Int -> LookupComment -> String -> IO String
-convert base org proj mn cm s =
+convert :: String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> String -> IO String
+convert base org proj mn msrcname cm s =
     fmap (writeRemarkup base org proj)
     $ convertBlocks mn cm
-    $ either (\err -> [R.Para [R.Str "NO PARSE: ", R.Str $ show err, R.Str s]]) id
-    $ R.parseTrac
+    $ either throw id
+    $ R.parseTrac (msrcname <|> (("ticket:" ++) . show <$> mn))
     $ s
+
+convertIgnoreErrors :: String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> String -> IO String
+convertIgnoreErrors base org proj mn msrcname cm s =
+  convert base org proj mn msrcname cm s `catch` handleParseError
+  where
+    handleParseError :: ParseError Char Void -> IO String
+    handleParseError err = do
+      putStrLn $ parseErrorPretty err
+      writeRemarkup base org proj <$>
+        convertBlocks mn cm
+          [R.Header 1
+            [R.Str "PARSER ERROR:"]
+            [ R.Para [R.Str $ parseErrorPretty err]
+            , R.Code (Just "trac") s
+            ]
+          ]
+
+
+-- (\err -> [R.Para [R.Str "NO PARSE: ", R.Str $ show err, R.Str s]])
 
 -- convertWithError org proj n cm s = writeRemarkup org proj . convertBlocks n cm <$> R.parseTrac s
 

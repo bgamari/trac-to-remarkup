@@ -19,7 +19,7 @@ import Control.Monad.Reader.Class
 import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.State
 import Control.Concurrent
-import Control.Concurrent.Async (mapConcurrently_)
+import Control.Concurrent.Async (mapConcurrently_, race_, race)
 import Data.Default (def)
 import Data.Foldable
 import Data.Function
@@ -42,6 +42,8 @@ import Debug.Trace
 import Text.Printf (printf)
 import Data.Time
 import Data.Time.Format
+import Text.Megaparsec.Error (ParseError, parseErrorPretty)
+import Data.Void
 
 import Database.PostgreSQL.Simple
 import Network.HTTP.Client.TLS as TLS
@@ -158,43 +160,69 @@ main = do
         skipAttachments = "-skip-attachments" `S.member` opts
         skipWiki = "-skip-wiki" `S.member` opts
         skipTickets = "-skip-tickets" `S.member` opts
+        testParserMode = "-test-parser" `S.member` opts
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
     getUserId <- mkUserIdOracle env
-    milestoneMap <- either (error . show) id <$> runClientM (makeMilestones (not skipMilestones) conn) env
 
     (finishedMutations, finishMutation) <- openStateFile mutationStateFile
 
     (commentCache, storeComment) <- openCommentCacheFile commentCacheFile
 
-    unless skipTickets $ do
-      putStrLn "Making tickets"
-      mutations <- filter (\m -> not $ m `S.member` finishedMutations) .
-                   filter (\m -> ticketMutationTicket m `S.member` ticketNumbers || S.null ticketNumbers)
-                   <$> Trac.getTicketMutations conn
-      let makeMutations' ts = do
-              runClientM
-                (makeMutations
-                  conn
-                  milestoneMap
-                  getUserId
-                  commentCache
-                  finishMutation
-                  storeComment
-                  ts)
-                env >>= print
-              putStrLn "makeMutations' done"
-      makeMutations' mutations
+    if testParserMode
+      then do
+        wpBody <- getContents
+        mdBody <- printParseError (T.pack wpBody) $
+                    Trac.Convert.convert
+                      (showBaseUrl gitlabBaseUrl)
+                      gitlabOrganisation
+                      gitlabProjectName
+                      Nothing
+                      (Just "stdin")
+                      dummyGetCommentId
+                      wpBody
+        putStr mdBody
+      else do
+        milestoneMap <- either (error . show) id <$> runClientM (makeMilestones (not skipMilestones) conn) env
 
-    unless skipAttachments $ do
-      putStrLn "Making attachments"
-      runClientM (makeAttachments conn getUserId) env >>= print
+        unless skipTickets $ printErrors $ do
+          putStrLn "Making tickets"
+          mutations <- filter (\m -> not $ m `S.member` finishedMutations) .
+                       filter (\m -> ticketMutationTicket m `S.member` ticketNumbers || S.null ticketNumbers)
+                       <$> Trac.getTicketMutations conn
+          let makeMutations' ts = do
+                  runClientM
+                    (makeMutations
+                      conn
+                      milestoneMap
+                      getUserId
+                      commentCache
+                      finishMutation
+                      storeComment
+                      ts)
+                    env >>= throwLeft >>= print
+                  putStrLn "makeMutations' done"
+          makeMutations' mutations
 
-    unless skipWiki $ do
-      putStrLn "Making wiki"
-      runClientM (buildWiki commentCache conn) env
+        unless skipAttachments $ printErrors $ do
+          putStrLn "Making attachments"
+          runClientM (makeAttachments conn getUserId) env >>= throwLeft >>= print
 
+        unless skipWiki $ printErrors $ do
+          putStrLn "Making wiki"
+          void $ runClientM (buildWiki commentCache conn) env >>= throwLeft
+
+    where
+      throwLeft :: (Exception e, Monad m, MonadThrow m) => Either e a -> m a
+      throwLeft = either throwM return
+
+      printErrors :: IO () -> IO ()
+      printErrors action =
+        action `catch` (\(err :: SomeException) -> putStrLn (displayException err))
+
+dummyGetCommentId :: Int -> Int -> IO CommentRef
+dummyGetCommentId t c = pure MissingCommentRef
 
 divide :: Int -> [a] -> [[a]]
 divide n xs = map f [0..n-1]
@@ -204,8 +232,10 @@ divide n xs = map f [0..n-1]
 
 type Username = Text
 
-knownUsers :: M.Map Username Username
-knownUsers = M.fromList
+type Email = Text
+
+knownUsersList :: [(Username, Username)]
+knownUsersList =
     [ "Krzysztof Gogolewski <krz.gogolewski@gmail.com>" .= "int-index"
     , "Ben Gamari <ben@smart-cactus.org>" .= "bgamari"
     , "Austin Seipp <aust@well-typed.com>" .= "thoughtpolice"
@@ -220,6 +250,20 @@ knownUsers = M.fromList
     , "andygill" .= "AndyGill"
     ]
   where (.=) = (,)
+
+knownUsers :: M.Map Email Username
+knownUsers = M.fromList knownUsersList
+
+knownEmails :: M.Map Username Email
+knownEmails = M.fromList $ map flipPair knownUsersList
+
+findKnownUser :: Username -> Maybe User
+findKnownUser username = do
+  email <- M.lookup username knownEmails
+  return $ User (UserId 0) username username (Just email)
+
+flipPair :: (a, b) -> (b, a)
+flipPair (a, b) = (b, a)
 
 sanitizeUsername :: Username -> Username
 sanitizeUsername n
@@ -462,11 +506,12 @@ collapseChanges tcs = TicketChange
 
 tracToMarkdown :: CommentCacheVar -> TicketNumber -> Text -> IO Text
 tracToMarkdown commentCache (TicketNumber n) src =
-      T.pack <$> Trac.Convert.convert
+      T.pack <$> Trac.Convert.convertIgnoreErrors
         (showBaseUrl gitlabBaseUrl)
         gitlabOrganisation
         gitlabProjectName
         (Just $ fromIntegral n)
+        Nothing
         getCommentId
         (T.unpack src)
       where
@@ -521,44 +566,70 @@ createTicket milestoneMap getUserId commentCache t = do
     liftIO $ print ir
     return $ irIid ir
 
+withTimeout :: Int -> IO () -> IO Bool
+withTimeout delayMS action =
+  either (const True) (const False) <$> race action reaper
+  where
+    reaper = do
+      threadDelay (delayMS * 1000)
+
 buildWiki :: CommentCacheVar -> Connection -> ClientM ()
 buildWiki commentCache conn = do
   wc <- liftIO $ Git.clone wikiRemoteUrl
   liftIO $ putStrLn $ "Building wiki in " ++ wc
   pages <- liftIO $ getWikiPages conn
   forM_ pages $ \WikiPage{..} -> do
-    liftIO $ putStrLn $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
+    liftIO $ do
+      putStrLn $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
+      hFlush stdout
     let filename = wc </> T.unpack wpName <.> "md"
-    liftIO $ createDirectoryIfMissing True (takeDirectory filename)
-    mdBody <- liftIO $ Trac.Convert.convert
-                (showBaseUrl gitlabBaseUrl)
-                gitlabOrganisation
-                gitlabProjectName
-                Nothing
-                getCommentId
-                (T.unpack wpBody)
-    liftIO $ writeFile filename mdBody
-    -- TODO: deal with "multiple users..." error
-    User{..} <- do
-      findUsersByUsername gitlabToken wpAuthor >>= \case
-        user:_ ->
-          pure user
-        _ ->
-          findUsersByEmail gitlabToken wpAuthor >>= \case
-            user:_ -> pure user
-            _ ->
-              error $ "Author not matched: " ++ T.unpack wpAuthor
+    liftIO $ do
+      written <- withTimeout 10000 $ do
+                  mdBody <- printParseError wpBody $
+                              Trac.Convert.convert
+                                (showBaseUrl gitlabBaseUrl)
+                                gitlabOrganisation
+                                gitlabProjectName
+                                Nothing
+                                (Just filename)
+                                getCommentId
+                                -- dummyGetCommentId
+                                (T.unpack . T.dropWhile isSpace $ wpBody)
+                  createDirectoryIfMissing True (takeDirectory filename)
+                  writeFile filename mdBody
+      unless written $ do
+        putStrLn "PARSER TIMEOUT EXCEEDED"
+        T.putStrLn wpBody
+        hFlush stdout
+    muser <- do
+      (pure $ findKnownUser wpAuthor)
+        |$| (listToMaybe <$> findUsersByUsername gitlabToken wpAuthor)
+        |$| (listToMaybe <$> findUsersByEmail gitlabToken wpAuthor)
+        |$| do
+          -- no user found, let's fake one
+          liftIO $ putStrLn $ "Author not matched: " ++ T.unpack wpAuthor
+          pure . Just $ User (UserId 0) wpAuthor wpAuthor Nothing
+    let User{..} = fromMaybe (User (UserId 0) "notfound" "notfound" Nothing) muser
     let juserEmail = fromMaybe ("trac-" ++ T.unpack userUsername ++ "@haskell.org") (T.unpack <$> userEmail)
     let commitAuthor = printf "%s <%s>" userName juserEmail
     let commitDate = formatTime defaultTimeLocale (iso8601DateFormat Nothing) wpTime
-    let msg = fromMaybe ("Edit " ++ T.unpack wpName) (T.unpack <$> wpComment)
-    liftIO $ git_ wc
-      "add" [filename]
-    liftIO $ git_ wc
-      "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate]
+    let msg = fromMaybe ("Edit " ++ T.unpack wpName) (T.unpack <$> wpComment >>= unlessNull)
+    liftIO $ do
+      git_ wc "add" [filename] >>= putStrLn
+      noChanges <- all isSpace <$> git_ wc "status" ["--porcelain"]
+      unless noChanges $ do
+        git_ wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= putStrLn
     where
       getCommentId :: Int -> Int -> IO CommentRef
       getCommentId t c = fromMaybe MissingCommentRef . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
+
+printParseError :: Text -> IO String -> IO String
+printParseError body action = action `catch` h
+  where
+    h :: ParseError Char Void -> IO String
+    h err = do
+      putStrLn $ parseErrorPretty err
+      return $ T.unpack body
 
 ticketNumberToIssueIid (TicketNumber n) =
   IssueIid $ fromIntegral n
@@ -946,7 +1017,7 @@ traceTeeShow x = trace (show x) x
 
 extractCommitHash :: Text -> Maybe (CommitHash, Maybe RepoName)
 extractCommitHash t = do
-  eparsed <- either (const Nothing) Just $ Trac.parseTrac (T.unpack t)
+  eparsed <- either (const Nothing) Just $ Trac.parseTrac Nothing (T.unpack t)
   listToMaybe $ Trac.walk (traceTeeShow . extractFromInline . traceTeeShow) eparsed
   where
     extractFromInline :: Trac.Inline -> Maybe (CommitHash, Maybe RepoName)
@@ -956,3 +1027,8 @@ extractCommitHash t = do
       Nothing
 
 isHexChar c = isDigit c || (c `elem` ['a'..'f'])
+
+(|$|) :: (Monad m) => m (Maybe a) -> m (Maybe a) -> m (Maybe a)
+a |$| b = do
+  x <- a
+  if isJust x then pure x else b
