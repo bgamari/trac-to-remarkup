@@ -157,6 +157,7 @@ main = do
         skipMilestones = "-skip-milestones" `S.member` opts
         skipAttachments = "-skip-attachments" `S.member` opts
         skipWiki = "-skip-wiki" `S.member` opts
+        skipTickets = "-skip-tickets" `S.member` opts
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
@@ -167,30 +168,33 @@ main = do
 
     (commentCache, storeComment) <- openCommentCacheFile commentCacheFile
 
-    putStrLn "Making wiki"
-    runClientM (buildWiki commentCache conn) env
-
-    putStrLn "Making tickets"
-    mutations <- filter (\m -> not $ m `S.member` finishedMutations) .
-                 filter (\m -> ticketMutationTicket m `S.member` ticketNumbers || S.null ticketNumbers)
-                 <$> Trac.getTicketMutations conn
-    let makeMutations' ts = do
-            runClientM
-              (makeMutations
-                conn
-                milestoneMap
-                getUserId
-                commentCache
-                finishMutation
-                storeComment
-                ts)
-              env >>= print
-            putStrLn "makeMutations' done"
-    makeMutations' mutations
+    unless skipTickets $ do
+      putStrLn "Making tickets"
+      mutations <- filter (\m -> not $ m `S.member` finishedMutations) .
+                   filter (\m -> ticketMutationTicket m `S.member` ticketNumbers || S.null ticketNumbers)
+                   <$> Trac.getTicketMutations conn
+      let makeMutations' ts = do
+              runClientM
+                (makeMutations
+                  conn
+                  milestoneMap
+                  getUserId
+                  commentCache
+                  finishMutation
+                  storeComment
+                  ts)
+                env >>= print
+              putStrLn "makeMutations' done"
+      makeMutations' mutations
 
     unless skipAttachments $ do
       putStrLn "Making attachments"
       runClientM (makeAttachments conn getUserId) env >>= print
+
+    unless skipWiki $ do
+      putStrLn "Making wiki"
+      runClientM (buildWiki commentCache conn) env
+
 
 divide :: Int -> [a] -> [[a]]
 divide n xs = map f [0..n-1]
