@@ -160,6 +160,7 @@ main = do
         skipAttachments = "-skip-attachments" `S.member` opts
         skipWiki = "-skip-wiki" `S.member` opts
         skipTickets = "-skip-tickets" `S.member` opts
+        skipWikiHistory = "-skip-wiki-history" `S.member` opts
         testParserMode = "-test-parser" `S.member` opts
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
@@ -211,7 +212,7 @@ main = do
 
         unless skipWiki $ printErrors $ do
           putStrLn "Making wiki"
-          void $ runClientM (buildWiki commentCache conn) env >>= throwLeft
+          void $ runClientM (buildWiki skipWikiHistory commentCache conn) env >>= throwLeft
 
     where
       throwLeft :: (Exception e, Monad m, MonadThrow m) => Either e a -> m a
@@ -574,11 +575,11 @@ withTimeout delayMS action =
     reaper = do
       threadDelay (delayMS * 1000)
 
-buildWiki :: CommentCacheVar -> Connection -> ClientM ()
-buildWiki commentCache conn = do
+buildWiki :: Bool -> CommentCacheVar -> Connection -> ClientM ()
+buildWiki fast commentCache conn = do
   wc <- liftIO $ Git.clone wikiRemoteUrl
   liftIO $ putStrLn $ "Building wiki in " ++ wc
-  pages <- liftIO $ getWikiPages conn
+  pages <- liftIO $ (if fast then getWikiPagesFast else getWikiPages) conn
   forM_ (take 100 pages) (buildPage wc)
   liftIO $ do
     git_ wc "pull" [] >>= putStrLn

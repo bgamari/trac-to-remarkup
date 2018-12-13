@@ -326,7 +326,23 @@ getWikiPages :: Connection -> IO [WikiPage]
 getWikiPages conn = do
   mapMaybe f <$> query_ conn
         [sql|SELECT name, time, version, author, text, comment
-             FROM wiki
+             FROM wiki w
+             ORDER BY time, version |]
+  where
+    f :: (Text, TracTime, Int, Text, Text, Maybe Text) -> Maybe WikiPage
+    f (name, TracTime time, version, author, text, mcomment) =
+      Just $ WikiPage name time version text mcomment author
+
+-- | Get only the very first and very last version of each wiki page. This will
+-- record the original draft and the current version, but skips over all
+-- in-between steps.
+getWikiPagesFast :: Connection -> IO [WikiPage]
+getWikiPagesFast conn = do
+  mapMaybe f <$> query_ conn
+        [sql|SELECT name, time, version, author, text, comment
+             FROM wiki w
+             WHERE w.version = (SELECT MAX(version) FROM wiki v WHERE v.name = w.name)
+                OR w.version = (SELECT MIN(version) FROM wiki v WHERE v.name = w.name)
              ORDER BY time, version |]
   where
     f :: (Text, TracTime, Int, Text, Text, Maybe Text) -> Maybe WikiPage
