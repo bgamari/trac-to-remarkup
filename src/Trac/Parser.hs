@@ -3,6 +3,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Trac.Parser where
 
 --import Pandoc.Types
@@ -18,8 +19,9 @@ import qualified Text.Megaparsec.Char as C
 
 import Control.Applicative ((<|>), some, optional)
 import Control.Monad (void)
-import Data.Char (readLitChar, isSpace)
+import Data.Char (readLitChar, isSpace, isUpper, isLower)
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.List (intercalate)
 import Data.Maybe (listToMaybe, fromMaybe, isJust)
 import Data.Maybe
 import Data.Void
@@ -42,6 +44,7 @@ data Inline = Bold Inlines
              | WikiStyle Inlines
              | Monospaced Type String
              | Link String [String]
+             | WikiLink String (Maybe [String])
              | GitCommitLink String (Maybe String) [String]
              | TracTicketLink Int (Maybe [String])
              | DifferentialLink Int
@@ -435,6 +438,7 @@ makeLink =
     ( try makeCommentLink
     <|> try makeCommitLink
     <|> try makeTicketLink
+    <|> try makeWikiLink
     <|> makeWebLink
     )
   where
@@ -449,6 +453,17 @@ makeLink =
       ticketNumber <- optional (try (string ":ticket:") *> number)
       eof
       return $ CommentLink ticketNumber commentNumber . emptyToNothing
+    makeWikiLink = do
+      (_ :: Maybe String) <- optional (try (string "wiki:"))
+      let ccWord :: Parser String
+          ccWord = do
+            c <- satisfy isUpper
+            cs <- some (satisfy isLower)
+            return $ c:cs
+      let wikiPart = concat <$> some ccWord
+      parts <- try wikiPart `sepBy1` (char '/' :: Parser Char)
+      eof
+      return $ WikiLink (intercalate "/" parts) . emptyToNothing
     makeTicketLink = do
       ticketNumber <- try (string "ticket:") *> number
       commentNumberMay <- optional (try (string "#comment:") *> number)

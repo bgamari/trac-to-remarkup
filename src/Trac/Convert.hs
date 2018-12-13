@@ -122,6 +122,10 @@ convertInline n cm (R.Italic is) = Italic <$> convertInlines n cm is
 convertInline n cm (R.WikiStyle is) = Italic <$> convertInlines n cm is
 convertInline n cm (R.Link url []) = pure $ WebLink (intersperse Space [Str url]) url
 convertInline n cm (R.Link url is) = pure $ WebLink (intersperse Space (map Str is)) url
+convertInline n cm (R.WikiLink wikiname mlabel) = do
+  let url = tracWikiNameToGitlab wikiname
+      label = map Str $ fromMaybe [wikiname] mlabel
+  pure $ WikiLink label url
 convertInline n cm (R.GitCommitLink hash mrepo []) = pure $ GitCommitLink (intersperse Space (prettyCommit hash mrepo)) hash mrepo
 convertInline n cm (R.GitCommitLink hash mrepo is) = pure $ GitCommitLink (intersperse Space (map Str is)) hash mrepo
 convertInline n cm (R.Str s) = pure $ Str s

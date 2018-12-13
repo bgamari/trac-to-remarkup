@@ -43,7 +43,7 @@ data Inline = Bold Inlines
              | ImageLink
              | UserMention
              | ProjectMention
-             | WikiLink (Maybe Inlines)
+             | WikiLink Inlines String
              | WebLink Inlines String
              | GitCommitLink Inlines String (Maybe String)
              | LineBreak
@@ -223,7 +223,7 @@ inline (WebLink is url) = longLink url is
 inline (ObjectLink Ref) = return empty
 inline (ImageLink) = return empty
 inline LineBreak = return cr
-
+inline (WikiLink label url) = longLink url label
 inline (TicketLink Nothing n Nothing) =
   -- shorthand ticket link: we can do this nicely
   return $ char '#' <> text (show n)
