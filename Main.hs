@@ -580,7 +580,7 @@ buildWiki fast commentCache conn = do
   wc <- liftIO $ Git.clone wikiRemoteUrl
   liftIO $ putStrLn $ "Building wiki in " ++ wc
   pages <- liftIO $ (if fast then getWikiPagesFast else getWikiPages) conn
-  forM_ (take 100 pages) (buildPage wc)
+  forM_ pages (buildPage wc)
   liftIO $ do
     git_ wc "pull" [] >>= putStrLn
     git_ wc "push" ["origin", "master"] >>= putStrLn
