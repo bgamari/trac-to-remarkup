@@ -52,7 +52,7 @@ import Network.HTTP.Types.Status
 import Servant.Client
 
 import qualified Git 
-import Git (git, git_)
+import Git (git, git_, GitException)
 
 import GitLab.Tickets
 import GitLab.Common
@@ -566,10 +566,11 @@ createTicket milestoneMap getUserId commentCache t = do
     liftIO $ print ir
     return $ irIid ir
 
-withTimeout :: Int -> IO () -> IO Bool
+withTimeout :: Int -> IO a -> IO (Maybe a)
 withTimeout delayMS action =
-  either (const True) (const False) <$> race action reaper
+  either Just (const Nothing) <$> race action reaper
   where
+    reaper :: IO ()
     reaper = do
       threadDelay (delayMS * 1000)
 
@@ -578,50 +579,73 @@ buildWiki commentCache conn = do
   wc <- liftIO $ Git.clone wikiRemoteUrl
   liftIO $ putStrLn $ "Building wiki in " ++ wc
   pages <- liftIO $ getWikiPages conn
-  forM_ pages $ \WikiPage{..} -> do
-    liftIO $ do
-      putStrLn $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
-      hFlush stdout
-    let filename = wc </> T.unpack wpName <.> "md"
-    liftIO $ do
-      written <- withTimeout 10000 $ do
-                  mdBody <- printParseError wpBody $
-                              Trac.Convert.convert
-                                (showBaseUrl gitlabBaseUrl)
-                                gitlabOrganisation
-                                gitlabProjectName
-                                Nothing
-                                (Just filename)
-                                getCommentId
-                                -- dummyGetCommentId
-                                (T.unpack . T.dropWhile isSpace $ wpBody)
-                  createDirectoryIfMissing True (takeDirectory filename)
-                  writeFile filename mdBody
-      unless written $ do
-        putStrLn "PARSER TIMEOUT EXCEEDED"
-        T.putStrLn wpBody
+  forM_ (take 100 pages) (buildPage wc)
+  liftIO $ do
+    git_ wc "pull" [] >>= putStrLn
+    git_ wc "push" ["origin", "master"] >>= putStrLn
+  where
+    getCommentId :: Int -> Int -> IO CommentRef
+    getCommentId t c = fromMaybe MissingCommentRef . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
+
+    buildPage wc WikiPage{..} = do
+      liftIO $ do
+        putStrLn $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
         hFlush stdout
-    muser <- do
-      (pure $ findKnownUser wpAuthor)
-        |$| (listToMaybe <$> findUsersByUsername gitlabToken wpAuthor)
-        |$| (listToMaybe <$> findUsersByEmail gitlabToken wpAuthor)
-        |$| do
-          -- no user found, let's fake one
-          liftIO $ putStrLn $ "Author not matched: " ++ T.unpack wpAuthor
-          pure . Just $ User (UserId 0) wpAuthor wpAuthor Nothing
-    let User{..} = fromMaybe (User (UserId 0) "notfound" "notfound" Nothing) muser
-    let juserEmail = fromMaybe ("trac-" ++ T.unpack userUsername ++ "@haskell.org") (T.unpack <$> userEmail)
-    let commitAuthor = printf "%s <%s>" userName juserEmail
-    let commitDate = formatTime defaultTimeLocale (iso8601DateFormat Nothing) wpTime
-    let msg = fromMaybe ("Edit " ++ T.unpack wpName) (T.unpack <$> wpComment >>= unlessNull)
-    liftIO $ do
-      git_ wc "add" [filename] >>= putStrLn
-      noChanges <- all isSpace <$> git_ wc "status" ["--porcelain"]
-      unless noChanges $ do
-        git_ wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= putStrLn
-    where
-      getCommentId :: Int -> Int -> IO CommentRef
-      getCommentId t c = fromMaybe MissingCommentRef . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
+      let filename = wc </> T.unpack wpName <.> "md"
+      liftIO $ do
+        mbody <- withTimeout 10000 $ do
+                      printParseError wpBody $
+                        Trac.Convert.convert
+                          (showBaseUrl gitlabBaseUrl)
+                          gitlabOrganisation
+                          gitlabProjectName
+                          Nothing
+                          (Just filename)
+                          getCommentId
+                          -- dummyGetCommentId
+                          (T.unpack . T.dropWhile isSpace $ wpBody)
+        printf "Create file %s in directory %s\n"
+          (show filename)
+          (show $ takeDirectory filename)
+        hFlush stdout
+        createDirectoryIfMissing True (takeDirectory filename)
+        case mbody of
+          Just body ->
+            writeFile filename body
+          Nothing -> do
+            putStrLn "PARSER TIMEOUT EXCEEDED"
+            T.putStrLn wpBody
+            hFlush stdout
+            writeFile filename $
+              printf
+                "PARSER TIMEOUT\n\nOriginal source:\n\n```trac\n%s\n```\n"
+                wpBody
+      muser <- do
+        (pure $ findKnownUser wpAuthor)
+          |$| (listToMaybe <$> findUsersByUsername gitlabToken wpAuthor)
+          |$| (listToMaybe <$> findUsersByEmail gitlabToken wpAuthor)
+          |$| do
+            -- no user found, let's fake one
+            liftIO $ putStrLn $ "Author not matched: " ++ T.unpack wpAuthor
+            pure . Just $ User (UserId 0) wpAuthor wpAuthor Nothing
+      let User{..} = fromMaybe (User (UserId 0) "notfound" "notfound" Nothing) muser
+      let juserEmail = fromMaybe ("trac-" ++ T.unpack userUsername ++ "@haskell.org") (T.unpack <$> userEmail)
+      let commitAuthor = printf "%s <%s>" userName juserEmail
+      let commitDate = formatTime defaultTimeLocale (iso8601DateFormat Nothing) wpTime
+      let msg = fromMaybe ("Edit " ++ T.unpack wpName) (T.unpack <$> wpComment >>= unlessNull)
+      liftIO $ printGitError $ do
+        status <- git_ wc "status" ["--porcelain"]
+        putStrLn $ "GIT STATUS: " ++ show status
+        unless (all isSpace status) $ do
+          git_ wc "add" ["."] >>= putStrLn
+          git_ wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= putStrLn
+
+printGitError :: IO () -> IO ()
+printGitError action = action `catch` h
+  where
+    h :: GitException -> IO ()
+    h err = do
+      putStrLn $ displayException err
 
 printParseError :: Text -> IO String -> IO String
 printParseError body action = action `catch` h
@@ -629,7 +653,8 @@ printParseError body action = action `catch` h
     h :: ParseError Char Void -> IO String
     h err = do
       putStrLn $ parseErrorPretty err
-      return $ T.unpack body
+      return $ printf "Parser error:\n\n```\n%s\n```\n\nOriginal source:\n\n```trac\n%s\n```\n"
+        (parseErrorPretty err) body
 
 ticketNumberToIssueIid (TicketNumber n) =
   IssueIid $ fromIntegral n

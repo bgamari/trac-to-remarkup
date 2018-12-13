@@ -13,6 +13,7 @@ import Control.Applicative
 import Control.Exception
 import Text.Megaparsec.Error (ParseError, parseErrorPretty)
 import Data.Void
+import Text.Printf
 
 type LookupComment = Int -> Int -> IO CommentRef
 
@@ -26,10 +27,23 @@ convert base org proj mn msrcname cm s =
 
 convertIgnoreErrors :: String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> String -> IO String
 convertIgnoreErrors base org proj mn msrcname cm s =
-  convert base org proj mn msrcname cm s `catch` handleParseError
+  convert base org proj mn msrcname cm s
+    `catches`
+      [ Handler handleParseError
+      , Handler handleOtherError
+      ]
   where
+    handleOtherError :: SomeException -> IO String
+    handleOtherError err = do
+      putStrLn "CONVERSION FAILED: OTHER ERROR"
+      putStrLn $ displayException err
+      return $
+        printf "Error:\n\n```\n%s\n```\n\nOriginal Trac source:\n\n```trac\n%s\n```\n"
+          (displayException err) s
+
     handleParseError :: ParseError Char Void -> IO String
     handleParseError err = do
+      putStrLn "CONVERSION FAILED: PARSER ERROR"
       putStrLn $ parseErrorPretty err
       writeRemarkup base org proj <$>
         convertBlocks mn cm
