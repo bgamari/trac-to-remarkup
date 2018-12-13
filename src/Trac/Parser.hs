@@ -263,10 +263,10 @@ header = try $ do
   getInput >>= \s -> traceShowM ("header", take 5 $ s)
   level <- length <$> some (char '=')
   skipSpaces
-  content <- inlines
-  bs <- blocks
-  _ <- optional $ skipSpaces >> some (char '=')
-  return (Header level content bs)
+  content <- manyTill inline (try newline <|> try (some (char '=') >> newline))
+  -- bs <- blocks
+  -- _ <- optional $ skipSpaces >> some (char '=')
+  return (Header level content [])
 
 para :: Parser Block
 para = Para <$> some inline
