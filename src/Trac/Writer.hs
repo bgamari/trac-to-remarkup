@@ -9,6 +9,8 @@ import Trac.Pretty
 import qualified Data.Map as M
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
+import Text.Casing
+import Data.List.Split
 
 type CommentMap = M.Map (Int, Int) Int
 
@@ -265,3 +267,5 @@ mkDifferentialUrl :: (Semigroup t, IsString t) => Int -> t
 mkDifferentialUrl n =
     "https://phabricator.haskell.org/D" <> fromString (show n)
 
+tracWikiNameToGitlab :: String -> String
+tracWikiNameToGitlab = intercalate "/" . map (toKebab . fromHumps) . splitOn "/"

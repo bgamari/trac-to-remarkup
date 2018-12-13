@@ -63,7 +63,7 @@ import qualified Trac.Web
 import Trac.Db as Trac
 import Trac.Db.Types as Trac
 import Trac.Convert (LookupComment)
-import Trac.Writer (mkDifferentialLink)
+import Trac.Writer (mkDifferentialLink, tracWikiNameToGitlab)
 import qualified Trac.Convert
 import qualified Trac.Parser as Trac
 import Settings
@@ -591,7 +591,9 @@ buildWiki commentCache conn = do
       liftIO $ do
         putStrLn $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
         hFlush stdout
-      let filename = wc </> T.unpack wpName <.> "md"
+      let baseFilename = wc </> (tracWikiNameToGitlab . T.unpack $ wpName)
+          filename = baseFilename <.> "md"
+          tracFilename = baseFilename <.> "trac"
       liftIO $ do
         mbody <- withTimeout 10000 $ do
                       printParseError wpBody $
@@ -609,6 +611,7 @@ buildWiki commentCache conn = do
           (show $ takeDirectory filename)
         hFlush stdout
         createDirectoryIfMissing True (takeDirectory filename)
+        T.writeFile tracFilename wpBody
         case mbody of
           Just body ->
             writeFile filename body

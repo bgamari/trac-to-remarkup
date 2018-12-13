@@ -23,6 +23,7 @@ library
                       Git
   build-depends:       base >=4.9 && <4.13,
                        bytestring,
+                       casing >=0.1.4.0 && <=0.2,
                        megaparsec > 6 && < 7,
                        NoTrace,
                        mtl,
@@ -30,6 +31,7 @@ library
                        containers,
                        temporary,
                        time,
+                       split,
                        postgresql-simple,
                        process,
                        aeson,
