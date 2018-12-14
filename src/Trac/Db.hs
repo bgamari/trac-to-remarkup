@@ -346,3 +346,21 @@ getWikiPagesFast conn = do
     f :: (Text, TracTime, Int, Text, Text, Maybe Text) -> Maybe WikiPage
     f (name, TracTime time, version, author, text, mcomment) =
       Just $ WikiPage name time version text mcomment author
+
+data UserAttribute = Email
+
+getUserAttribute :: Connection -> UserAttribute -> T.Text -> IO (Maybe Text)
+getUserAttribute conn attr user = do
+    res <- query conn
+        [sql|SELECT value
+             FROM session_attribute
+             WHERE sid = ? AND name = ?
+            |]
+        (user, attrName)
+    return $ case res of
+      [Only val] -> Just val
+      _ -> Nothing
+  where
+    attrName :: Text
+    attrName = case attr of
+                 Email -> "email"

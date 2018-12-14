@@ -165,7 +165,7 @@ main = do
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
-    getUserId <- mkUserIdOracle env
+    getUserId <- mkUserIdOracle conn env
 
     (finishedMutations, finishMutation) <- openStateFile mutationStateFile
 
@@ -298,8 +298,8 @@ type UserLookupM = MaybeT (StateT UserIdCache ClientM)
 
 type UserIdCache = M.Map Username UserId
 
-mkUserIdOracle :: ClientEnv -> IO UserIdOracle
-mkUserIdOracle clientEnv = do
+mkUserIdOracle :: Connection -> ClientEnv -> IO UserIdOracle
+mkUserIdOracle conn clientEnv = do
     cacheVar <- newMVar mempty
     let runIt :: Username -> StateT UserIdCache IO (Maybe UserId)
         runIt username = StateT $ \cache -> do
@@ -324,7 +324,7 @@ mkUserIdOracle clientEnv = do
         <|> cacheIt (tee "tryLookupEmail - " tryLookupEmail)
         <|> cacheIt (tee "tryCreate - " tryCreate)
       where
-        cuUsername
+        username'
           | Just u <- M.lookup username knownUsers = u
           | otherwise = "trac-"<>sanitizeUsername username
 
@@ -335,20 +335,26 @@ mkUserIdOracle clientEnv = do
 
         tryLookupName :: UserLookupM UserId
         tryLookupName = do
-            liftIO . putStrLn $ "Find by username: " ++ T.unpack cuUsername
-            fmap userId $ MaybeT $ lift $ findUserByUsername gitlabToken cuUsername
+            liftIO . putStrLn $ "Find by username: " ++ T.unpack username'
+            fmap userId $ MaybeT $ lift $ findUserByUsername gitlabToken username'
 
         tryLookupEmail :: UserLookupM UserId
         tryLookupEmail = do
-            let cuEmail = "trac+"<>cuUsername<>"@haskell.org"
+            let cuEmail = "trac+"<>username'<>"@haskell.org"
             liftIO . putStrLn $ "Find by email: " ++ T.unpack cuEmail
             fmap userId $ MaybeT $ lift $ tee "user by email" $ findUserByEmail gitlabToken cuEmail
 
         tryCreate :: UserLookupM UserId
         tryCreate = do
+            m_email <- liftIO $ getUserAttribute conn Trac.Email username
             uidMay <- lift $ do
-              let cuEmail = "trac+"<>cuUsername<>"@haskell.org"
+              let cuEmail = case m_email of
+                              Nothing -> "trac+"<>cuUsername<>"@haskell.org"
+                              Just email -> email
                   cuName = username
+                  cuUsername = case M.lookup username knownUsers of
+                                 Just u -> u
+                                 Nothing -> username'
                   cuSkipConfirmation = True
               liftIO $ putStrLn $ "Creating user " <> show username <> " (" <> show cuEmail <> ")"
               lift $ createUserMaybe gitlabToken CreateUser {..}
