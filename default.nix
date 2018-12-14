@@ -34,9 +34,17 @@ let
         license = stdenv.lib.licenses.bsd3;
       };
 
+
+  withDwarf = haskellPackages: haskellPackages.override { 
+    overrides = self: super: {
+      mkDerivation = xs: super.mkDerivation (xs // 
+        { configureFlags = (xs.configureFlags or "") + "--ghc-options=-g --disable-executable-stripping --disable-library-stripping"; }
+      );
+    };
+  };
   haskellPackages = if compiler == "default"
                        then pkgs.haskellPackages
-                       else pkgs.haskell.packages.${compiler};
+                       else withDwarf pkgs.haskell.packages.${compiler};
 
   drv = with nixpkgs.haskell.lib; haskellPackages.callPackage f {
     NoTrace = doJailbreak haskellPackages.NoTrace;
