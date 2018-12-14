@@ -34,10 +34,10 @@ data Inline = Bold Inlines
              | Highlighted Inlines
              | ObjectLink Ref
              | TicketLink
-                  (Maybe Inlines) -- ^ label
-                  Int -- ^ ticket number
-                  (Maybe Int) -- ^ comment number
-             | DifferentialLink Int -- ^ Differential number
+                  (Maybe Inlines) -- label
+                  Int -- ticket number
+                  (Maybe Int) -- comment number
+             | DifferentialLink Int -- Differential number
              | Str String
              | Space
              | ImageLink
