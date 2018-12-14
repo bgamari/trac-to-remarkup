@@ -4,11 +4,12 @@ let
 
   inherit (nixpkgs) pkgs;
 
-  f = { mkDerivation, aeson, async, base, bytestring, connection
-      , containers, data-default, directory, exceptions, filepath
-      , http-client-tls, http-types, megaparsec, mtl
-      , NoTrace, postgresql-simple, pretty-show, process, servant
-      , servant-client, silently, stdenv, stm, text, time, transformers
+  f = { mkDerivation, aeson, async, base, bytestring, casing
+      , connection, containers, data-default, directory, exceptions
+      , filepath, http-client-tls, http-types, megaparsec
+      , mtl, NoTrace, postgresql-simple, pretty-show, process, servant
+      , servant-client, silently, split, stdenv, stm, temporary, text
+      , time, transformers
       }:
       mkDerivation {
         pname = "trac-to-remarkup";
@@ -17,13 +18,15 @@ let
         isLibrary = true;
         isExecutable = true;
         libraryHaskellDepends = [
-          aeson base bytestring containers megaparsec mtl NoTrace
-          postgresql-simple process servant servant-client text time
+          aeson base bytestring casing containers megaparsec mtl NoTrace
+          postgresql-simple process servant servant-client split temporary
+          text time
         ];
         executableHaskellDepends = [
           async base bytestring connection containers data-default directory
-          exceptions http-client-tls http-types mtl
-          postgresql-simple servant-client stm text transformers
+          exceptions filepath http-client-tls http-types
+          megaparsec mtl postgresql-simple servant-client stm text time
+          transformers
         ];
         testHaskellDepends = [
           base directory filepath pretty-show silently
@@ -37,8 +40,6 @@ let
 
   drv = with nixpkgs.haskell.lib; haskellPackages.callPackage f {
     NoTrace = doJailbreak haskellPackages.NoTrace;
-    megaparsec = doJailbreak (haskellPackages.callHackage "megaparsec" "5.3.1" {
-    });
   };
 
 in
