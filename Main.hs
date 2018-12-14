@@ -304,7 +304,7 @@ mkUserIdOracle conn clientEnv = do
     let runIt :: Username -> StateT UserIdCache IO (Maybe UserId)
         runIt username = StateT $ \cache -> do
             res <- runClientM (runStateT (runMaybeT $ getUserId $ T.strip username) cache) clientEnv
-            liftIO $ putStrLn $ "Resolve user " ++ show username ++ " -> " ++ show res
+            liftIO $ putStrLn $ "Resolve user " ++ show username ++ " -> " ++ show (fmap fst res)
             either throwM pure res
     return $ liftIO
            . fmap (fromMaybe $ error "couldn't resolve user id")
