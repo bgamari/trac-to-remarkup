@@ -340,7 +340,8 @@ mkUserIdOracle conn clientEnv = do
 
         tryLookupEmail :: UserLookupM UserId
         tryLookupEmail = do
-            let cuEmail = "trac+"<>username'<>"@haskell.org"
+            m_email <- liftIO $ getUserAttribute conn Trac.Email username
+            let cuEmail = fromMaybe ("trac+"<>username'<>"@haskell.org") m_email
             liftIO . putStrLn $ "Find by email: " ++ T.unpack cuEmail
             fmap userId $ MaybeT $ lift $ tee "user by email" $ findUserByEmail gitlabToken cuEmail
 
