@@ -168,7 +168,7 @@ monospaced =
 
 monospaced2 :: Parser Inline
 monospaced2 = try . between (string "{{{") (string "}}}") $ do
-  Monospaced <$> (optional $ try (many (satisfy isSpace) *> string "#!") *> word) -- <* skipSpaces)
+  Monospaced <$> (optional $ try (many (satisfy isSpace) *> string "#!") *> word <* skipSpaces)
              <*> someTill anyChar (lookAhead $ string "}}}")
 
 quoted :: Parser a -> Parser a
