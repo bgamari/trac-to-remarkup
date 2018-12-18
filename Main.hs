@@ -824,6 +824,7 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                          , eiUpdateTime = Just $ changeTime tc
                          , eiWeight = prioToWeight <$> ticketPriority fields
                          , eiAssignees = (:[]) <$> ownerUid
+                         , eiKeywords = ticketKeywords fields
                          }
     liftIO $ print edit
     meid <- if nullEditIssue edit

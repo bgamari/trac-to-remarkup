@@ -100,6 +100,7 @@ data EditIssue
                 , eiUpdateTime  :: Maybe UTCTime
                 , eiWeight      :: Maybe Weight
                 , eiAssignees   :: Maybe [UserId]
+                , eiKeywords    :: Maybe [Text]
                 }
     deriving (Show)
 
@@ -114,6 +115,7 @@ instance ToJSON EditIssue where
         , "updated_at" .=? eiUpdateTime
         , "weight" .=? eiWeight
         , "assignee_ids" .=? eiAssignees
+        , "keywords" .=? eiKeywords
         ]
 
 type EditIssueAPI =
@@ -125,9 +127,10 @@ type EditIssueAPI =
     :> Put '[JSON] IssueResp
 
 nullEditIssue :: EditIssue -> Bool
-nullEditIssue (EditIssue a b c _ e _ g h) =
+nullEditIssue (EditIssue a b c _ e _ g h i) =
     isNothing a && isNothing b && isNothing c &&
-    isNothing e && isNothing g && isNothing h
+    isNothing e && isNothing g && isNothing h &&
+    isNothing i
     -- N.B. Ignore update time and labels
 
 editIssue :: AccessToken -> Maybe UserId
