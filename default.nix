@@ -40,6 +40,9 @@ let
       mkDerivation = xs: super.mkDerivation (xs // 
         { configureFlags = (xs.configureFlags or "") + "--ghc-options=-g --disable-executable-stripping --disable-library-stripping"; }
       );
+      hspec = self.callHackage "hspec" "2.5.9" {};
+      hspec-core = self.callHackage "hspec-core" "2.5.9" {};
+      hspec-discover = self.callHackage "hspec-discover" "2.5.9" {};
     };
   };
   haskellPackages = if compiler == "default"
