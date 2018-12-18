@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -p python pythonPackages.requestSync
+#!nix-shell -p python36 python36Packages.requests -i python
 #!/usr/bin/python
 
 import requests
