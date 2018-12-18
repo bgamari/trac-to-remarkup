@@ -319,7 +319,8 @@ mkUserIdOracle conn clientEnv = do
 
     getUserId :: Username -> UserLookupM UserId
     getUserId username =
-            tee "tryCache" tryCache
+            tee "tryEmptyUserName" tryEmptyUserName
+        <|> tee "tryCache" tryCache
         <|> cacheIt (tee "tryLookupName - " tryLookupName)
         <|> cacheIt (tee "tryLookupEmail - " tryLookupEmail)
         <|> cacheIt (tee "tryCreate - " tryCreate)
@@ -327,6 +328,11 @@ mkUserIdOracle conn clientEnv = do
         username'
           | Just u <- M.lookup username knownUsers = u
           | otherwise = "trac-"<>sanitizeUsername username
+
+        tryEmptyUserName :: UserLookupM UserId
+        tryEmptyUserName
+          | username == "" = getUserId "unknown"
+          | otherwise      = empty
 
         tryCache :: UserLookupM UserId
         tryCache = do
