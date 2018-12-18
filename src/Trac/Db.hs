@@ -90,20 +90,20 @@ toTicket conn
     ticketSummary <- i <$> findOrigDef conn "summary" summary ticketNumber
     ticketComponent <- i <$> findOrigDef conn "component" component ticketNumber
 
-    ticketType <- i . toTicketType <$> findOrigDef conn "type" typ ticketNumber
-    ticketPriority <- i . toPriority <$> findOrigDef conn "priority" prio ticketNumber
-    ticketVersion <- i <$> findOrigDef conn "version" (fromMaybe "" mb_version) ticketNumber
-    ticketMilestone <- i <$> findOrigDef conn "milestone" (fromMaybe "" mb_milestone) ticketNumber
+    ticketType <- i . toTicketType . fromMaybe "" <$> findOrig conn "type" (Just typ) ticketNumber
+    ticketPriority <- i . toPriority . fromMaybe "" <$> findOrig conn "priority" (Just prio) ticketNumber
+    ticketVersion <- i . fromMaybe "" <$> findOrig conn "version" mb_version ticketNumber
+    ticketMilestone <- i . fromMaybe "" <$> findOrig conn "milestone" mb_milestone ticketNumber
     ticketKeywords <- i . T.words . fromMaybe "" <$> findOrig conn "keywords" mb_keywords ticketNumber
     ticketBlockedBy <- i . maybe [] parseTicketList <$> findOrig conn "blockedby" Nothing ticketNumber
     ticketRelated <- i . maybe [] parseTicketList <$> findOrig conn "related" Nothing ticketNumber
     ticketBlocking <- i . maybe [] parseTicketList <$> findOrig conn "blocking" Nothing ticketNumber
     ticketDifferentials <- i . maybe [] parseDifferentials <$> findOrig conn "differential" Nothing ticketNumber
-    ticketTestCase <- i . fromMaybe "" <$> findOrigDef conn "testcase" Nothing ticketNumber
-    ticketDescription <- i <$> findOrigDef conn "description" (fromMaybe "" mb_description) ticketNumber
-    ticketTypeOfFailure <- i . toTypeOfFailure <$> findOrigDef conn "failure" "" ticketNumber
-    ticketCC <- i . commaSep <$> findOrigDef conn "cc" (fromMaybe "" mb_cc) ticketNumber
-    ticketOwner <- i <$> findOrigDef conn "owner" (fromMaybe "" mb_owner) ticketNumber
+    ticketTestCase <- i . fromMaybe "" <$> findOrig conn "testcase" Nothing ticketNumber
+    ticketDescription <- i . fromMaybe "" <$> findOrig conn "description" mb_description ticketNumber
+    ticketTypeOfFailure <- i . toTypeOfFailure . fromMaybe "" <$> findOrig conn "failure" (Just "") ticketNumber
+    ticketCC <- i . commaSep . fromMaybe "" <$> findOrig conn "cc" mb_cc ticketNumber
+    ticketOwner <- i . fromMaybe "" <$> findOrig conn "owner" mb_owner ticketNumber
     let ticketFields = Fields {..}
     return Ticket {..}
 
