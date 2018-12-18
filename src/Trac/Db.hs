@@ -20,6 +20,7 @@ import Database.PostgreSQL.Simple.FromField
 import Database.PostgreSQL.Simple.ToField
 import Database.PostgreSQL.Simple.SqlQQ
 import Debug.Trace (trace)
+import Control.Monad (join)
 
 
 deriving instance FromField TicketNumber
@@ -51,7 +52,7 @@ getTicket (TicketNumber t) conn = do
           (Only t)
   return $ listToMaybe tickets
 
-findOrigField :: FromField a => Connection -> Text -> TicketNumber -> IO (Maybe a)
+findOrigField :: (Show a, FromField a) => Connection -> Text -> TicketNumber -> IO (Maybe (Maybe a))
 findOrigField conn field (TicketNumber n) = do
     mval <- query conn [sql|SELECT oldvalue
                             FROM ticket_change
@@ -61,13 +62,18 @@ findOrigField conn field (TicketNumber n) = do
                             LIMIT 1
                            |]
                   (n, field)
+    putStrLn $ "findOrigField " ++ show field ++ ": " ++ show mval
     return $ case mval of
       [] -> Nothing
-      [Only x] -> x
+      [Only x] -> Just x
 
-findOrig :: FromField a => Connection -> Text -> a -> TicketNumber -> IO a
-findOrig conn field def ticketNumber = fromMaybe def <$> findOrigField conn field ticketNumber
+findOrig :: (Show a, FromField a) => Connection -> Text -> Maybe a -> TicketNumber -> IO (Maybe a)
+findOrig conn field def ticketNumber =
+  fromMaybe def <$> findOrigField conn field ticketNumber
 
+findOrigDef :: (Show a, FromField a) => Connection -> Text -> a -> TicketNumber -> IO a
+findOrigDef conn field def ticketNumber =
+  fromMaybe def . join <$> findOrigField conn field ticketNumber
 
 toTicket :: Connection -> Row -> IO Ticket
 toTicket conn
@@ -81,23 +87,23 @@ toTicket conn
         ticketCreator = reporter
 
         i = Identity
-    ticketSummary <- i <$> findOrig conn "summary" summary ticketNumber
-    ticketComponent <- i <$> findOrig conn "component" component ticketNumber
+    ticketSummary <- i <$> findOrigDef conn "summary" summary ticketNumber
+    ticketComponent <- i <$> findOrigDef conn "component" component ticketNumber
 
-    ticketType <- i . toTicketType <$> findOrig conn "type" typ ticketNumber
-    ticketPriority <- i . toPriority <$> findOrig conn "priority" prio ticketNumber
-    ticketVersion <- i <$> findOrig conn "version" (fromMaybe "" mb_version) ticketNumber
-    ticketMilestone <- i <$> findOrig conn "milestone" (fromMaybe "" mb_milestone) ticketNumber
-    ticketKeywords <- i . T.words <$> findOrig conn "keywords" (fromMaybe "" mb_keywords) ticketNumber
-    ticketBlockedBy <- i . maybe [] parseTicketList <$> findOrigField conn "blockedby" ticketNumber
-    ticketRelated <- i . maybe [] parseTicketList <$> findOrigField conn "related" ticketNumber
-    ticketBlocking <- i . maybe [] parseTicketList <$> findOrigField conn "blocking" ticketNumber
-    ticketDifferentials <- i . maybe [] parseDifferentials <$> findOrigField conn "differential" ticketNumber
-    ticketTestCase <- i . fromMaybe "" <$> findOrigField conn "testcase" ticketNumber
-    ticketDescription <- i <$> findOrig conn "description" (fromMaybe "" mb_description) ticketNumber
-    ticketTypeOfFailure <- i . toTypeOfFailure <$> findOrig conn "failure" "" ticketNumber
-    ticketCC <- i . commaSep <$> findOrig conn "cc" (fromMaybe "" mb_cc) ticketNumber
-    ticketOwner <- i <$> findOrig conn "owner" (fromMaybe "" mb_owner) ticketNumber
+    ticketType <- i . toTicketType <$> findOrigDef conn "type" typ ticketNumber
+    ticketPriority <- i . toPriority <$> findOrigDef conn "priority" prio ticketNumber
+    ticketVersion <- i <$> findOrigDef conn "version" (fromMaybe "" mb_version) ticketNumber
+    ticketMilestone <- i <$> findOrigDef conn "milestone" (fromMaybe "" mb_milestone) ticketNumber
+    ticketKeywords <- i . T.words . fromMaybe "" <$> findOrig conn "keywords" mb_keywords ticketNumber
+    ticketBlockedBy <- i . maybe [] parseTicketList <$> findOrig conn "blockedby" Nothing ticketNumber
+    ticketRelated <- i . maybe [] parseTicketList <$> findOrig conn "related" Nothing ticketNumber
+    ticketBlocking <- i . maybe [] parseTicketList <$> findOrig conn "blocking" Nothing ticketNumber
+    ticketDifferentials <- i . maybe [] parseDifferentials <$> findOrig conn "differential" Nothing ticketNumber
+    ticketTestCase <- i . fromMaybe "" <$> findOrigDef conn "testcase" Nothing ticketNumber
+    ticketDescription <- i <$> findOrigDef conn "description" (fromMaybe "" mb_description) ticketNumber
+    ticketTypeOfFailure <- i . toTypeOfFailure <$> findOrigDef conn "failure" "" ticketNumber
+    ticketCC <- i . commaSep <$> findOrigDef conn "cc" (fromMaybe "" mb_cc) ticketNumber
+    ticketOwner <- i <$> findOrigDef conn "owner" (fromMaybe "" mb_owner) ticketNumber
     let ticketFields = Fields {..}
     return Ticket {..}
 
