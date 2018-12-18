@@ -13,7 +13,7 @@ Ticket IDs to be preserved.
     sudo systemctl stop gitlab-sidekiq
     sudo systemctl stop gitaly
     echo 'DROP DATABASE gitlab; DROP ROLE gitlab;' | sudo -u postgres psql 
-    sudo rm -Rf /var/gitlab
+    sudo rm -Rf /var/gitlab/state/*
     sudo systemctl start gitlab
     sudo systemctl start gitlab-workhorse
     sudo systemctl start gitlab-sidekiq
