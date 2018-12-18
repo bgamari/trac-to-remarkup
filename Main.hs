@@ -489,6 +489,7 @@ makeMutations conn milestoneMap getUserId commentCache finishMutation storeComme
         -- Apply a ticket change
         Trac.ChangeTicket -> do
           changes <- liftIO $ Trac.getTicketChanges conn (ticketMutationTicket m) (Just $ ticketMutationTime m)
+          liftIO $ print changes
           let iid = IssueIid (fromIntegral . getTicketNumber . ticketMutationTicket $ m)
           createTicketChanges
               milestoneMap
@@ -547,6 +548,7 @@ createTicket milestoneMap getUserId commentCache t = do
             , fieldsTable extraRows fields
             ]
         fields = ticketFields t
+    liftIO $ print fields
     let owner = runIdentity . ticketOwner $ fields
     ownerUid <- if T.null owner
                   then
@@ -563,6 +565,7 @@ createTicket milestoneMap getUserId commentCache t = do
                             , ciWeight = Just $ prioToWeight $ runIdentity $ ticketPriority fields
                             , ciAssignees = (:[]) <$> ownerUid
                             }
+    liftIO $ print issue
     let ignore404 (FailureResponse resp)
           | 404 <- statusCode $ responseStatusCode resp
           = return ()

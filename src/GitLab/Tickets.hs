@@ -62,6 +62,7 @@ data CreateIssue
                   , ciWeight :: Maybe Weight
                   , ciAssignees :: Maybe [UserId]
                   }
+                  deriving (Show)
 
 instance ToJSON CreateIssue where
     toJSON CreateIssue{..} = object
