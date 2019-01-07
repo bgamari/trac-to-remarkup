@@ -47,14 +47,17 @@ data Inline = Bold Inlines
              | WebLink Inlines String
              | GitCommitLink Inlines String (Maybe String)
              | LineBreak
+             deriving (Show)
 
 type Inlines = [Inline]
 
 data Ref = Ref
+  deriving (Show)
 
 type Blocks = [Block]
 
 data Style = Style
+  deriving (Show)
 
 data Block = Header Int Inlines Blocks
            | Quote Blocks
@@ -63,17 +66,19 @@ data Block = Header Int Inlines Blocks
            | CodeBlock (Maybe Lang) String
            | Table [TableRow]
            | HorizontalLine
+           deriving (Show)
 
 type Lang = String
 
 type TableRow = [TableCell]
 
-data TableCell = TableHeaderCell Inlines
-               | TableCell Inlines
+data TableCell = TableHeaderCell Blocks
+               | TableCell Blocks
+               deriving (Show)
 
-tableCellContents :: TableCell -> Inlines
-tableCellContents (TableCell is) = is
-tableCellContents (TableHeaderCell is) = is
+tableCellContents :: TableCell -> Blocks
+tableCellContents (TableCell bs) = bs
+tableCellContents (TableHeaderCell bs) = bs
 
 
 writeRemarkup :: String -> String -> String -> [Block] -> String
@@ -174,7 +179,7 @@ niceHeaderUnderline n =
 
 niceRowCells :: [TableCell] -> W Doc
 niceRowCells cells =
-  niceRowRaw <$> mapM (inlines . tableCellContents) cells
+  niceRowRaw <$> mapM (blocks . tableCellContents) cells
 
 niceRowRaw :: [Doc] -> Doc
 niceRowRaw items =
@@ -200,19 +205,22 @@ htmlTableCells :: [TableCell] -> W Doc
 htmlTableCells = fmap vcat . mapM htmlTableCell
 
 htmlTableCell :: TableCell -> W Doc
-htmlTableCell (TableHeaderCell is) =
-  htmlElem "th" <$> inlines is
-htmlTableCell (TableCell is) =
-  htmlElem "td" <$> inlines is
+htmlTableCell (TableHeaderCell bs) =
+  htmlElem "th" <$> blocks bs
+htmlTableCell (TableCell bs) =
+  htmlElem "td" <$> blocks bs
 
 oneListItem :: String -> Blocks -> W Doc
-oneListItem mark is = (text mark $$) . (nest 4) <$> blocks is
+oneListItem mark is =
+  hang 2 (text $ mark ++ " ") <$> blocks is
+  
+  -- (text mark $$) . (nest 4) <$> blocks is
 
 inlines = fmap hcat . mapM inline
 
 inline :: Inline -> W Doc
 inline (Bold is) = inside (text "**") (text "**") <$> inlines is
-inline (Italic is) = inside (text "//") (text "//") <$> inlines is
+inline (Italic is) = inside (text "*") (text "*") <$> inlines is
 inline (Monospaced _ is) = return $ inside (text "`") (text "`") (text is)
 inline (Deleted is) = inside (text "~~") (text "~~") <$> inlines is
 inline (Underlined is) = inside (text "__") (text "__") <$> inlines is

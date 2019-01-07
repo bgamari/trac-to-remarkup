@@ -1,6 +1,13 @@
 {-#LANGUAGE LambdaCase #-}
 
-module Trac.Convert (convert, convertIgnoreErrors, CommentMap, LookupComment) where
+module Trac.Convert
+          ( convert
+          , convertIgnoreErrors
+          , CommentMap
+          , LookupComment
+          , indentShowed
+          )
+where
 
 import qualified Trac.Parser as R
 import Trac.Writer
@@ -11,19 +18,94 @@ import Debug.Trace
 import Data.Maybe
 import Control.Applicative
 import Control.Exception
+import Control.Monad.State
 import Text.Megaparsec.Error (ParseError, parseErrorPretty)
 import Data.Void
 import Text.Printf
+import Debug.Trace (trace)
+import Data.Char (isSpace)
 
 type LookupComment = Int -> Int -> IO CommentRef
+
+tee :: (a -> String) -> a -> a
+tee f x = trace (f x) x
+
+teeM :: Monad m => (a -> String) -> m a -> m a
+teeM f a = do
+  x <- a
+  traceM (f x)
+  return x
+
+teeShow :: Show a => a -> a
+teeShow = tee show
 
 convert :: String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> String -> IO String
 convert base org proj mn msrcname cm s =
     fmap (writeRemarkup base org proj)
+    $ teeM (\x -> "CONVERT RESULT:\n" ++ indentShowed (show x))
     $ convertBlocks mn cm
+    -- $ tee (\x -> "PARSE RESULT:\n" ++ indentShowed (show x))
     $ either throw id
     $ R.parseTrac (msrcname <|> (("ticket:" ++) . show <$> mn))
     $ s
+
+indentShowed :: String -> String
+indentShowed =
+  unlines .
+  collapse .
+  indent .
+  parse
+  where
+    breakers = "[](){},;"
+    collapsibles = "[({,;"
+
+    indentPlus = "[({"
+    indentMinus = "])}"
+
+    isCollapsible c = isSpace c || c `elem` collapsibles
+
+    collapse :: [String] -> [String]
+    collapse (x:y:xs)
+      | all isCollapsible x =
+          collapse $ (x ++ " " ++ dropWhile isSpace y):xs
+      | otherwise =
+          x:collapse (y:xs)
+    collapse xs = xs
+
+    indent lns = flip evalState 0 $ forM lns $ \ln -> do
+      let plus = length . filter (`elem` indentPlus) $ ln
+      let minus = length . filter (`elem` indentMinus) $ ln
+      modify (+ plus)
+      i <- get
+      modify (subtract minus)
+      return $ replicate (i * 2) ' ' ++ ln
+
+
+    parse = split
+
+    split :: String -> [String]
+    split "" = []
+    split (x:xs)
+      | x == '"' =
+          split (skipStringLit xs)
+      | isSpace x =
+          split xs
+      | x `elem` breakers =
+          case split xs of
+            ((xx@(x2:_)):xxs) | x2 `elem` breakers ->
+              [x]:xx:xxs
+            (xx:xxs) ->
+              (x:' ':xx):xxs
+            _ -> [[x]]
+    split xs =
+      let (lhs, rhs) = break (`elem` breakers) xs
+      in lhs:split rhs
+
+    skipStringLit :: String -> String
+    skipStringLit [] = []
+    skipStringLit ('\\':xs) = skipStringLit (drop 1 xs)
+    skipStringLit ('"':xs) = xs
+    skipStringLit (x:xs) = skipStringLit xs
 
 convertIgnoreErrors :: String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> String -> IO String
 convertIgnoreErrors base org proj mn msrcname cm s =
@@ -66,7 +148,7 @@ convertBlock :: Maybe Int -> LookupComment -> R.Block -> IO Block
 convertBlock n cm (R.Header nlev is bs)
   = Header nlev <$> convertInlines n cm is <*> convertBlocks n cm bs
 convertBlock n cm (R.Para is)        = Para <$> convertInlines n cm is
-convertBlock n cm (R.List _ bs)      = List Style . map (:[]) <$> convertBlocks n cm bs
+convertBlock n cm (R.List _ bs)      = List Style <$> mapM (convertBlocks n cm) bs
 convertBlock n cm (R.DefnList d)     = convertDefnListToTable n cm d
 convertBlock n cm (R.Code ty s)      = pure $ CodeBlock ty s
 convertBlock n cm (R.BlockQuote bs)  = Quote . (:[]) . Para <$> convertInlines n cm bs
@@ -81,32 +163,32 @@ convertTableRow :: Maybe Int -> LookupComment -> R.TableRow -> IO TableRow
 convertTableRow n cm = mapM (convertTableCell n cm)
 
 convertTableCell :: Maybe Int -> LookupComment -> R.TableCell -> IO TableCell
-convertTableCell n cm (R.TableHeaderCell is) = TableHeaderCell <$> convertInlines n cm is
-convertTableCell n cm (R.TableCell is) = TableCell <$> convertInlines n cm is
+convertTableCell n cm (R.TableHeaderCell is) = TableHeaderCell <$> convertBlocks n cm is
+convertTableCell n cm (R.TableCell is) = TableCell <$> convertBlocks n cm is
 
-convertDefnListToTable :: Maybe Int -> LookupComment -> [(R.Inlines, [R.Inlines])] -> IO Block
+convertDefnListToTable :: Maybe Int -> LookupComment -> [(R.Inlines, [R.Blocks])] -> IO Block
 convertDefnListToTable n cm [] = pure $ Para []
 convertDefnListToTable n cm items = Table . mconcat <$> mapM (convertDefnToTableRows n cm) items
 
-convertDefnToTableRows :: Maybe Int -> LookupComment -> (R.Inlines, [R.Inlines]) -> IO [TableRow]
-convertDefnToTableRows n cm (dh, []) = (:[]) . (:[]) . TableHeaderCell <$> convertInlines n cm dh
+convertDefnToTableRows :: Maybe Int -> LookupComment -> (R.Inlines, [R.Blocks]) -> IO [TableRow]
+convertDefnToTableRows n cm (dh, []) = (:[]) . (:[]) . TableHeaderCell . (:[]) . Para <$> convertInlines n cm dh
 convertDefnToTableRows n cm (dh, dd:dds) = (:) <$> convertFirstDefnRow n cm dh dd <*> convertAdditionalDefnRows n cm dds
 
-convertFirstDefnRow :: Maybe Int -> LookupComment -> R.Inlines -> R.Inlines -> IO TableRow
+convertFirstDefnRow :: Maybe Int -> LookupComment -> R.Inlines -> R.Blocks -> IO TableRow
 convertFirstDefnRow n cm dh dd =
   sequence
-    [ TableHeaderCell <$> convertInlines n cm dh
-    , TableCell <$> convertInlines n cm dd
+    [ TableHeaderCell . (:[]) . Para <$> convertInlines n cm dh
+    , TableCell <$> convertBlocks n cm dd
     ]
 
-convertAdditionalDefnRow :: Maybe Int -> LookupComment -> R.Inlines -> IO TableRow
+convertAdditionalDefnRow :: Maybe Int -> LookupComment -> R.Blocks -> IO TableRow
 convertAdditionalDefnRow n cm dd =
   sequence
     [ pure $ TableCell []
-    , TableCell <$> convertInlines n cm dd
+    , TableCell <$> convertBlocks n cm dd
     ]
 
-convertAdditionalDefnRows :: Maybe Int -> LookupComment -> [R.Inlines] -> IO [TableRow]
+convertAdditionalDefnRows :: Maybe Int -> LookupComment -> [R.Blocks] -> IO [TableRow]
 convertAdditionalDefnRows n cm = mapM (convertAdditionalDefnRow n cm)
 
 convertInlines n cm = mapM (convertInline n cm)
