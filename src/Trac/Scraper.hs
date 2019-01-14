@@ -53,6 +53,26 @@ extractPayload [] =
 extractPayload (x:xs) = 
   extractPayloadFrom x <|> extractPayload xs
 
+hasAttr :: Node -> Text -> Bool
+hasAttr (NodeElement (Element {..})) key
+  | isJust $ HashMap.lookup key eltAttrs
+  = True
+  | otherwise
+  = False
+
+attrIs :: Node -> Text -> Text -> Bool
+attrIs (NodeElement (Element {..})) key val
+  | HashMap.lookup key eltAttrs == Just val
+  = True
+  | otherwise
+  = False
+
+lookupAttr :: Text -> Node -> Maybe Text
+lookupAttr key (NodeElement (Element {..}))
+  = HashMap.lookup key eltAttrs
+lookupAttr _ _
+  = Nothing
+
 extractPayloadFrom :: Node -> Maybe Node
 extractPayloadFrom (NodeContent _) = Nothing
 extractPayloadFrom node@(NodeElement (Element {..}))
@@ -211,9 +231,24 @@ nodeToInlines node@(NodeElement (Element {..}))
   = [R.Image]
   | eltName == "br"
   = [R.LineBreak]
+  | eltName == "a"
+  , Just wikiname <- takeWikiName =<< lookupAttr "href" node
+  , attrIs node "class" "wiki"
+  = [R.WikiLink wikiname (Just . map (Text.unpack . textContent) $ eltChildren)]
+  -- TODO:
+  -- * ticket links
+  -- * ticket comment links
+  -- * special links (e.g. /query)
+  -- * anchors (<a> without href)
+  | eltName == "a"
+  , Just url <- lookupAttr "href" node
+  = [R.Link (Text.unpack url) (map (Text.unpack . textContent) $ eltChildren)]
   | otherwise
   = nodesToInlines eltChildren
 nodeToInlines n = textToInlines $ textContent n
+
+takeWikiName :: Text -> Maybe String
+takeWikiName = fmap Text.unpack . Text.stripPrefix "/trac/ghc/wiki/"
 
 textToInlines :: Text -> [R.Inline]
 textToInlines = (:[]) . R.Str . Text.unpack
