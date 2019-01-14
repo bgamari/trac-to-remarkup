@@ -231,6 +231,13 @@ nodeToInlines node@(NodeElement (Element {..}))
   = [R.Image]
   | eltName == "br"
   = [R.LineBreak]
+
+  -- Skip @<span class="icon"></span>@: these are icons on external links,
+  -- injected by Trac itself; they'll only get in the way, so we'll skip them.
+  | eltName == "span"
+  , attrIs node "class" "icon"
+  = []
+
   | eltName == "a"
   , Just wikiname <- takeWikiName =<< lookupAttr "href" node
   , attrIs node "class" "wiki"
@@ -255,6 +262,6 @@ textToInlines = (:[]) . R.Str . Text.unpack
 
 textContent :: Node -> Text
 textContent (NodeContent str) =
-  str
+  Text.replace "\x200b" "" str
 textContent (NodeElement (Element {..})) =
   mconcat . map textContent $ eltChildren
