@@ -20,6 +20,7 @@ import Trac.Convert (convertBlocks, LookupComment)
 import Trac.Writer (writeRemarkup)
 import Data.Maybe
 import Data.Char
+import Text.Read (readMaybe)
 
 httpGet :: String -> IO LBS.ByteString
 httpGet url = do
@@ -221,41 +222,61 @@ nodesToInlines = concatMap nodeToInlines
 
 nodeToInlines :: Node -> [R.Inline]
 nodeToInlines node@(NodeElement (Element {..}))
+  ------------- common markup -------------
   | eltName == "b" || eltName == "strong"
   = [R.Bold $ nodesToInlines eltChildren]
   | eltName == "i" || eltName == "em"
   = [R.Italic $ nodesToInlines eltChildren]
   | eltName == "tt" || eltName == "code"
   = [R.Monospaced Nothing . Text.unpack $ textContent node]
+
+  ------------- inline media -------------
   | eltName == "img"
   = [R.Image]
+
+  ------------- line break -------------
   | eltName == "br"
   = [R.LineBreak]
 
+  ------------- cruft -------------
   -- Skip @<span class="icon"></span>@: these are icons on external links,
   -- injected by Trac itself; they'll only get in the way, so we'll skip them.
   | eltName == "span"
   , attrIs node "class" "icon"
   = []
 
+  ------------- links -------------
   | eltName == "a"
   , Just wikiname <- takeWikiName =<< lookupAttr "href" node
   , attrIs node "class" "wiki"
   = [R.WikiLink wikiname (Just . map (Text.unpack . textContent) $ eltChildren)]
-  -- TODO:
+
   -- * ticket links
+  | eltName == "a"
+  , Just ticketNumber <- takeTicketNumber =<< lookupAttr "href" node
+  = [R.TracTicketLink ticketNumber (Just . map (Text.unpack . textContent) $ eltChildren)]
+
+  -- TODO:
   -- * ticket comment links
   -- * special links (e.g. /query)
   -- * anchors (<a> without href)
   | eltName == "a"
   , Just url <- lookupAttr "href" node
   = [R.Link (Text.unpack url) (map (Text.unpack . textContent) $ eltChildren)]
+
+  ------------- text content -------------
   | otherwise
   = nodesToInlines eltChildren
 nodeToInlines n = textToInlines $ textContent n
 
 takeWikiName :: Text -> Maybe String
 takeWikiName = fmap Text.unpack . Text.stripPrefix "/trac/ghc/wiki/"
+
+takeTicketNumber :: Text -> Maybe Int
+takeTicketNumber url =
+  readMaybe =<<
+  Just . Text.unpack . Text.takeWhile isDigit =<<
+  Text.stripPrefix "/trac/ghc/ticket/" url
 
 textToInlines :: Text -> [R.Inline]
 textToInlines = (:[]) . R.Str . Text.unpack
