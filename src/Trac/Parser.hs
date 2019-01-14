@@ -69,12 +69,13 @@ type Type = Maybe String
 data Block = Header Int Inlines Blocks
            | Para Inlines
            | List ListType [Block]
-           | DefnList [(Inlines, [Inlines])]
+           | DefnList [(Blocks, [Blocks])]
            | Code Type String
            | BlockQuote Inlines
            | Discussion [Block]
            | Table [TableRow]
-           | HorizontalLine deriving Show
+           | HorizontalLine
+           deriving Show
 
 instance Walk Block Block where
   walk f x@(Header _ _ xs) = maybeToList (f x) ++ walk f xs
@@ -94,8 +95,8 @@ instance Walk Block Inline where
 
 type TableRow = [TableCell]
 
-data TableCell = TableCell Inlines
-               | TableHeaderCell Inlines
+data TableCell = TableCell Blocks
+               | TableHeaderCell Blocks
                deriving (Show)
 
 instance Walk TableCell Inline where
@@ -114,6 +115,18 @@ parseTrac msrcname s =
 
 testParser :: Parser a -> String -> a
 testParser p s = either (error . show) id (runParser p "" s)
+
+-- | Wrap one inline in a Para
+inlineToPara :: Inline -> Block
+inlineToPara = Para . (:[])
+
+-- | Wrap many inlines in individual Paras
+inlinesToParas :: Inlines -> Blocks
+inlinesToParas = map inlineToPara
+
+-- | Wrap many inlines into one Para
+inlinesToPara :: Inlines -> Blocks
+inlinesToPara = (:[]) . Para
 
 {-
 blocks :: Parser Blocks
@@ -316,16 +329,16 @@ defnList = try $ do
   DefnList <$> some getOne
 
 
-defnItem :: Parser (Inlines, [Inlines])
+defnItem :: Parser (Blocks, [Blocks])
 defnItem = try $ do
  L.indentGuard sc GT pos1
 -- traceM "here"
- defn <- someTill inline (lexeme(string "::"))
+ defn <- inlinesToPara <$> someTill inline (lexeme(string "::"))
 -- traceM "here2"
 -- traceShowM defn
- mis <- optional (some inlineNoNL)
+ mbs <- optional (inlinesToPara <$> some inlineNoNL)
  traceM "here3"
- traceShowM mis
+ traceShowM mbs
  optional newline
  traceM "here3a"
  getInput >>= traceShowM
@@ -333,11 +346,14 @@ defnItem = try $ do
 
  iss <- many (do
           notFollowedBy defnItem
-          L.indentGuard sc GT pos1 >> (some inlineNoNL) <* optional newline)
+          L.indentGuard sc GT pos1 >> (some inlineNoNL) <* optional newline
+          )
+ let bss :: [Blocks]
+     bss = map inlinesToPara iss
  traceM "here3c"
 -- traceM "here4"
- traceShowM (defn, mis, iss)
- return (defn, maybeToList mis ++ iss)
+ traceShowM (defn, mbs, bss)
+ return (defn, maybeToList mbs ++ bss)
 
 
 table :: Parser Block
@@ -356,11 +372,13 @@ tableCell = tableHeaderCell <|> tableRegularCell
 tableHeaderCell :: Parser TableCell
 tableHeaderCell = do
   try (string "=")
-  TableHeaderCell <$> manyTill inline (try (string "=||") <|> try (string "||"))
+  TableHeaderCell . inlinesToPara <$>
+    manyTill inline (try (string "=||") <|> try (string "||"))
 
 tableRegularCell :: Parser TableCell
 tableRegularCell = do
-  TableCell <$> manyTill inline (string "||")
+  TableCell . inlinesToPara <$>
+    manyTill inline (string "||")
 
 discussion :: Parser Block
 discussion = do
@@ -369,12 +387,15 @@ discussion = do
   getInput >>= \ (!s) -> traceShowM (s, ss)
   Discussion <$> parseFromString (many blankline *> many block) ss
 
-data ListType = ListType deriving Show
+data ListType
+  = BulletListType
+  | NumberedListType
+  deriving Show
 
 pList :: Parser Block
 pList =  do
   getInput >>= \s -> traceShowM ("pList", s)
-  List ListType <$> (try pItemListStart *> pItemList)
+  List BulletListType <$> (try pItemListStart *> pItemList)
 
 pItemListStart = sc *> char '*'
 

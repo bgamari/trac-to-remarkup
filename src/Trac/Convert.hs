@@ -1,6 +1,6 @@
 {-#LANGUAGE LambdaCase #-}
 
-module Trac.Convert (convert, convertIgnoreErrors, CommentMap, LookupComment) where
+module Trac.Convert (convert, convertIgnoreErrors, convertBlocks, CommentMap, LookupComment) where
 
 import qualified Trac.Parser as R
 import Trac.Writer
@@ -81,32 +81,32 @@ convertTableRow :: Maybe Int -> LookupComment -> R.TableRow -> IO TableRow
 convertTableRow n cm = mapM (convertTableCell n cm)
 
 convertTableCell :: Maybe Int -> LookupComment -> R.TableCell -> IO TableCell
-convertTableCell n cm (R.TableHeaderCell is) = TableHeaderCell <$> convertInlines n cm is
-convertTableCell n cm (R.TableCell is) = TableCell <$> convertInlines n cm is
+convertTableCell n cm (R.TableHeaderCell is) = TableHeaderCell <$> convertBlocks n cm is
+convertTableCell n cm (R.TableCell is) = TableCell <$> convertBlocks n cm is
 
-convertDefnListToTable :: Maybe Int -> LookupComment -> [(R.Inlines, [R.Inlines])] -> IO Block
+convertDefnListToTable :: Maybe Int -> LookupComment -> [(R.Blocks, [R.Blocks])] -> IO Block
 convertDefnListToTable n cm [] = pure $ Para []
 convertDefnListToTable n cm items = Table . mconcat <$> mapM (convertDefnToTableRows n cm) items
 
-convertDefnToTableRows :: Maybe Int -> LookupComment -> (R.Inlines, [R.Inlines]) -> IO [TableRow]
-convertDefnToTableRows n cm (dh, []) = (:[]) . (:[]) . TableHeaderCell <$> convertInlines n cm dh
+convertDefnToTableRows :: Maybe Int -> LookupComment -> (R.Blocks, [R.Blocks]) -> IO [TableRow]
+convertDefnToTableRows n cm (dh, []) = (:[]) . (:[]) . TableHeaderCell <$> convertBlocks n cm dh
 convertDefnToTableRows n cm (dh, dd:dds) = (:) <$> convertFirstDefnRow n cm dh dd <*> convertAdditionalDefnRows n cm dds
 
-convertFirstDefnRow :: Maybe Int -> LookupComment -> R.Inlines -> R.Inlines -> IO TableRow
+convertFirstDefnRow :: Maybe Int -> LookupComment -> R.Blocks -> R.Blocks -> IO TableRow
 convertFirstDefnRow n cm dh dd =
   sequence
-    [ TableHeaderCell <$> convertInlines n cm dh
-    , TableCell <$> convertInlines n cm dd
+    [ TableHeaderCell <$> convertBlocks n cm dh
+    , TableCell <$> convertBlocks n cm dd
     ]
 
-convertAdditionalDefnRow :: Maybe Int -> LookupComment -> R.Inlines -> IO TableRow
+convertAdditionalDefnRow :: Maybe Int -> LookupComment -> R.Blocks -> IO TableRow
 convertAdditionalDefnRow n cm dd =
   sequence
     [ pure $ TableCell []
-    , TableCell <$> convertInlines n cm dd
+    , TableCell <$> convertBlocks n cm dd
     ]
 
-convertAdditionalDefnRows :: Maybe Int -> LookupComment -> [R.Inlines] -> IO [TableRow]
+convertAdditionalDefnRows :: Maybe Int -> LookupComment -> [R.Blocks] -> IO [TableRow]
 convertAdditionalDefnRows n cm = mapM (convertAdditionalDefnRow n cm)
 
 convertInlines n cm = mapM (convertInline n cm)
@@ -153,4 +153,4 @@ convertInline n cm (R.CommentLink mt c mlabel) = do
           traceShow
             ("COULD NOT FIND", n, mt, c)
             (pure $ TicketLink mlabelInline ticketN Nothing)
-convertInline _ _ e = error $ "not handled"  ++ show e
+convertInline _ _ e = pure $ Str $ "not handled: "  ++ show e

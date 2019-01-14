@@ -19,6 +19,7 @@ import Trac.Db.Types (CommentRef (..))
 import Trac.Convert (convertBlocks, LookupComment)
 import Trac.Writer (writeRemarkup)
 import Data.Maybe
+import Data.Char
 
 httpGet :: String -> IO LBS.ByteString
 httpGet url = do
@@ -33,13 +34,14 @@ data ConversionError = ConversionError String
 instance Exception ConversionError where
 
 convert :: String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> LBS.ByteString -> IO String
-convert base org proj mn msrcname cm s =
-    fmap (writeRemarkup base org proj)
-    $ convertBlocks mn cm
-    $ nodeToBlocks
-    $ maybe (throw $ ConversionError "Main content not found") id
-    $ extractPayload
-    $ parseHtml s
+convert base org proj mn msrcname cm s = do
+  let blocks =
+        nodeToBlocks $
+        maybe (throw $ ConversionError "Main content not found") id $
+        extractPayload $
+        parseHtml s
+
+  fmap (writeRemarkup base org proj) $ convertBlocks mn cm blocks
 
 parseHtml :: LBS.ByteString -> [Node]
 parseHtml =
@@ -59,25 +61,44 @@ extractPayloadFrom node@(NodeElement (Element {..}))
   | otherwise
   = extractPayload eltChildren
 
+-- We use a custom folding strategy here in order to deal with inline-level
+-- elements in a context where block-level elements are expected. When
+-- that happens, we want to group consecutive inline elements and wrap
+-- each group in a single Para, but we need to keep existing block-level
+-- elements intact.
 nodesToBlocks :: [Node] -> [R.Block]
 nodesToBlocks nodes =
   go $ zip (map nodeToInlines nodes) (map nodeToBlocks nodes)
   where
+    -- This case deals with successful block-level parses: this means
+    -- that the node results in one or more proper Blocks, and we can
+    -- just use those.
     go ((_, blocks):xs)
       | not (null blocks)
       = blocks ++ go xs
-    go []
-      = []
+    -- Base case. The usual.
+    go [] = []
+    -- This is what happens when we have no successful block-level parse:
+    -- we grab all consecutive non-parses from the start of the list,
+    -- wrap them in a Para, and recurse into the rest of the list.
     go xs
       = let (is, rem) = break (not . null . snd) xs
         in (R.Para $ concatMap fst is) :
            go rem
 
+childrenToBlocks :: Node -> [R.Block]
+childrenToBlocks (NodeElement Element{..})
+  = nodesToBlocks eltChildren
+childrenToBlocks _ = []
 
+-- | Generate 'Blocks' for a 'Node'. Non-block nodes, including text content,
+-- yield an empty list.
 nodeToBlocks :: Node -> [R.Block]
 nodeToBlocks (NodeContent str) = []
 nodeToBlocks (NodeElement elem) = elemToBlocks elem
 
+-- | Generate 'Blocks' for an 'Element'. Non-block elements yield an
+-- empty list.
 elemToBlocks :: Element -> [R.Block]
 elemToBlocks Element {..}
   | eltName == "ul"
@@ -86,7 +107,7 @@ elemToBlocks Element {..}
   = [R.List R.NumberedListType $ map nodeToLi eltChildren]
   | eltName == "pre"
   = let syntaxMay = Text.unpack <$> HashMap.lookup "class" eltAttrs
-    in [R.Code syntaxMay $ concatMap textContent eltChildren]
+    in [R.Code syntaxMay $ Text.unpack . mconcat . map textContent $ eltChildren]
   | eltName == "p"
   = [R.Para $ nodesToInlines eltChildren]
   | eltName == "hr"
@@ -112,11 +133,37 @@ elemToBlocks Element {..}
   | eltName == "table"
   = nodesToTable eltChildren
   | eltName == "dl"
-  = error "<DL> not supported"
+  = nodesToDL eltChildren
   | eltName `elem` ["div", "section"]
   = nodesToBlocks eltChildren
   | otherwise
   = []
+
+nodesToDL :: [Node] -> [R.Block]
+nodesToDL = (:[]) . R.DefnList . nodesToDLEntries
+
+nodesToDLEntries :: [Node] -> [(R.Blocks, [R.Blocks])]
+nodesToDLEntries nodes =
+  go nodes
+  where
+    go :: [Node] -> [(R.Blocks, [R.Blocks])]
+    go []
+      = []
+    go (NodeContent str : xs)
+      = error "Expected dt, found TEXT"
+    go (headNode@(NodeElement Element{..}) : xs)
+      | eltName == "dt"
+      = let (ddNodes, rem) = break (not . isDD) xs
+            dds = map childrenToBlocks ddNodes
+            dt = childrenToBlocks headNode
+        in ((dt, dds) : go rem)
+
+isDD :: Node -> Bool
+isDD (NodeElement Element{..})
+  | eltName == "dd"
+  = True
+isDD _
+  = False
 
 nodesToTable :: [Node] -> [R.Block]
 nodesToTable (NodeElement (Element "tbody" _ xs) : ns) =
@@ -129,15 +176,20 @@ nodeToTR (NodeContent str) =
   -- Nothing useful we can do here other than dump the string in a
   -- single-cell table row
   [R.TableCell [R.Para [R.Str $ Text.unpack str]]]
-nodeToTR (NodeElement Element {..}) =
-  map nodeToTableCell eltChildren
+nodeToTR (NodeElement Element {..})
+  | eltName == "tr"
+  = map nodeToTableCell eltChildren
+  | otherwise
+  = error $ "Expected <tr>, but found <" ++ Text.unpack eltName ++ ">"
 
 nodeToTableCell :: Node -> R.TableCell
 nodeToTableCell (NodeElement Element {..})
   | eltName == "th"
   = R.TableHeaderCell $ nodesToBlocks eltChildren
+  | eltName == "td"
+  = R.TableHeaderCell $ nodesToBlocks eltChildren
   | otherwise
-  = R.TableCell $ nodesToBlocks eltChildren
+  = error $ "Expected <th> or <td>, but found <" ++ Text.unpack eltName ++ ">"
 nodeToTableCell (NodeContent str)
   = R.TableCell [R.Para [R.Str $ Text.unpack str]]
 
@@ -154,15 +206,20 @@ nodeToInlines node@(NodeElement (Element {..}))
   | eltName == "i" || eltName == "em"
   = [R.Italic $ nodesToInlines eltChildren]
   | eltName == "tt" || eltName == "code"
-  = [R.Monospaced Nothing $ textContent node]
+  = [R.Monospaced Nothing . Text.unpack $ textContent node]
   | eltName == "img"
   = [R.Image]
   | eltName == "br"
   = [R.LineBreak]
   | otherwise
   = nodesToInlines eltChildren
-nodeToInlines n = [R.Str $ textContent n]
+nodeToInlines n = textToInlines $ textContent n
 
-textContent :: Node -> String
-textContent (NodeContent str) = Text.unpack str
-textContent (NodeElement (Element {..})) = concatMap textContent eltChildren
+textToInlines :: Text -> [R.Inline]
+textToInlines = (:[]) . R.Str . Text.unpack
+
+textContent :: Node -> Text
+textContent (NodeContent str) =
+  str
+textContent (NodeElement (Element {..})) =
+  mconcat . map textContent $ eltChildren

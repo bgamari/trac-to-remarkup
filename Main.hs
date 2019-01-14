@@ -31,6 +31,7 @@ import Data.Text (Text)
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as TE
@@ -66,6 +67,7 @@ import Trac.Convert (LookupComment)
 import Trac.Writer (mkDifferentialLink, tracWikiNameToGitlab)
 import qualified Trac.Convert
 import qualified Trac.Parser as Trac
+import qualified Trac.Scraper as Scraper
 import Settings
 
 type MilestoneMap = M.Map Text MilestoneId
@@ -150,18 +152,28 @@ type StoreComment = Int -> CommentRef -> IO ()
 gitlabApiBaseUrl =
   gitlabBaseUrl { baseUrlPath = "api/v4" }
 
+tee :: Monad m => (a -> m ()) -> a -> m a
+tee f x = f x >> pure x
+
 main :: IO ()
 main = do
     args <- getArgs
-    print args
-    let ticketNumbers = S.fromList . map (TicketNumber . read) . filter (not . isPrefixOf "-") $ args
-        opts = S.fromList . filter (isPrefixOf "-") $ args
+    let opts = S.fromList . filter (isPrefixOf "-") $ args
         skipMilestones = "-skip-milestones" `S.member` opts
         skipAttachments = "-skip-attachments" `S.member` opts
         skipWiki = "-skip-wiki" `S.member` opts
         skipTickets = "-skip-tickets" `S.member` opts
         skipWikiHistory = "-skip-wiki-history" `S.member` opts
         testParserMode = "-test-parser" `S.member` opts
+        testScraperMode = "-test-scraper" `S.member` opts
+    let ticketNumbers = S.fromList
+                      . map (TicketNumber . read)
+                      . filter (all isDigit)
+                      . filter (not . isPrefixOf "-")
+                      $ args
+        scrapeUrls = filter (not . all isDigit)
+                   . filter (not . isPrefixOf "-")
+                   $ args
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
@@ -184,6 +196,19 @@ main = do
                       dummyGetCommentId
                       wpBody
         putStr mdBody
+      else if testScraperMode
+        then forM_ scrapeUrls $ \url -> do
+          Scraper.httpGet url
+            -- >>= tee LBS.putStrLn
+            >>= Scraper.convert
+                  (showBaseUrl gitlabBaseUrl)
+                  gitlabOrganisation
+                  gitlabProjectName
+                  Nothing
+                  (Just "stdin")
+                  dummyGetCommentId
+            >>= putStrLn
+          
       else do
         milestoneMap <- either (error . show) id <$> runClientM (makeMilestones (not skipMilestones) conn) env
 
