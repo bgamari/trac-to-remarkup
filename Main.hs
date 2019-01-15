@@ -644,7 +644,7 @@ buildWiki fast commentCache conn = do
                 wpName
                 wpVersion
 
-        mbody <- dealWithHttpError .  withTimeout 10000 $ do
+        mbody <- dealWithHttpError 0 .  withTimeout 10000 $ do
                     hbody <- Scraper.httpGet url
                     printScraperError $
                       Scraper.convert
@@ -727,8 +727,8 @@ printParseError body action = action `catch` h
       return $ printf "Parser error:\n\n```\n%s\n```\n\nOriginal source:\n\n```trac\n%s\n```\n"
         (parseErrorPretty err) body
 
-dealWithHttpError :: IO (Maybe String) -> IO (Maybe String)
-dealWithHttpError action = action `catch` h
+dealWithHttpError :: Int -> IO (Maybe String) -> IO (Maybe String)
+dealWithHttpError n action = action `catch` h
   where
     h :: HttpException -> IO (Maybe String)
     h e@(HttpExceptionRequest
@@ -740,6 +740,16 @@ dealWithHttpError action = action `catch` h
         ) = do
       putStrLn $ displayException e
       return Nothing
+    h e@(HttpExceptionRequest _ ConnectionFailure {}) =
+      if n >= 7 then do
+        putStrLn $ "Max number of retries exceeded, skipping."
+        return Nothing
+      else do
+        let delaySecs = 2 ^ n
+        putStrLn $ "Network error, retrying in " ++ show delaySecs ++ " seconds"
+        threadDelay (delaySecs * 1000000)
+        dealWithHttpError (succ n) action
+      
     h e = do
       putStrLn $ displayException e
       return Nothing
