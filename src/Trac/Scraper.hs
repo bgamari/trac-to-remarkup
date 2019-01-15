@@ -213,10 +213,22 @@ isWhitespace _
   = False
 
 nodesToTable :: [Node] -> [R.Block]
-nodesToTable (NodeElement (Element "tbody" _ xs) : ns) =
-  nodesToTable xs ++ nodesToTable ns
-nodesToTable xs =
-  [R.Table $ map nodeToTR $ filter (not . isWhitespace) xs]
+nodesToTable = (:[]) . R.Table . nodesToTableRows
+
+nodesToTableRows :: [Node] -> [R.TableRow]
+nodesToTableRows (NodeElement (Element "thead" _ xs) : ns) =
+  -- the Parser AST doesn't allow us to distinguish thead from tbody,
+  -- so we'll just throw everything in one big table.
+  nodesToTableRows xs ++ nodesToTableRows ns
+nodesToTableRows (NodeElement (Element "tbody" _ xs) : ns) =
+  nodesToTableRows xs ++ nodesToTableRows ns
+nodesToTableRows [] =
+  []
+nodesToTableRows (x:xs)
+  | isWhitespace x
+  = nodesToTableRows xs
+  | otherwise
+  = nodeToTR x : nodesToTableRows xs
 
 nodeToTR :: Node -> R.TableRow
 nodeToTR (NodeContent str) =

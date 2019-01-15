@@ -753,6 +753,15 @@ dealWithHttpError n action = action `catch` h
       putStrLn $ displayException e
       return Nothing
     h e@(HttpExceptionRequest _ ConnectionFailure {}) =
+      retry
+    h e@(HttpExceptionRequest _ ResponseTimeout {}) =
+      retry
+      
+    h e = do
+      putStrLn $ displayException e
+      return Nothing
+
+    retry =
       if n >= 7 then do
         putStrLn $ "Max number of retries exceeded, skipping."
         return Nothing
@@ -761,10 +770,6 @@ dealWithHttpError n action = action `catch` h
         putStrLn $ "Network error, retrying in " ++ show delaySecs ++ " seconds"
         threadDelay (delaySecs * 1000000)
         dealWithHttpError (succ n) action
-      
-    h e = do
-      putStrLn $ displayException e
-      return Nothing
 
 
 ticketNumberToIssueIid (TicketNumber n) =
