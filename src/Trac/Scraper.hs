@@ -55,15 +55,8 @@ extractPayload [] =
 extractPayload (x:xs) = 
   extractPayloadFrom x <|> extractPayload xs
 
-hasAttr :: Node -> Text -> Bool
-hasAttr (NodeElement (Element {..})) key
-  | isJust $ HashMap.lookup key eltAttrs
-  = True
-  | otherwise
-  = False
-
-attrIs :: Node -> Text -> Text -> Bool
-attrIs (NodeElement (Element {..})) key val
+attrIs :: HashMap.HashMap Text Text -> Text -> Text -> Bool
+attrIs eltAttrs key val
   | HashMap.lookup key eltAttrs == Just val
   = True
   | otherwise
@@ -123,17 +116,26 @@ nodeToBlocks (NodeElement elem) = elemToBlocks elem
 -- empty list.
 elemToBlocks :: Element -> [R.Block]
 elemToBlocks Element {..}
+  ----- lists -----
   | eltName == "ul"
   = [R.List R.BulletListType $ map nodeToLi eltChildren]
   | eltName == "ol"
+
+  ----- code blocks -----
   = [R.List R.NumberedListType $ map nodeToLi eltChildren]
   | eltName == "pre"
   = let syntaxMay = Text.unpack <$> HashMap.lookup "class" eltAttrs
     in [R.Code syntaxMay $ Text.unpack . mconcat . map textContent $ eltChildren]
+
+  ----- paragraphs -----
   | eltName == "p"
   = [R.Para $ nodesToInlines eltChildren]
+
+  ----- divider -----
   | eltName == "hr"
   = [R.HorizontalLine]
+
+  ----- headings -----
   | eltName == "h1"
   = [R.Header 1 (nodesToInlines eltChildren) []]
   | eltName == "h2"
@@ -152,12 +154,26 @@ elemToBlocks Element {..}
         [R.Discussion $ nodesToBlocks eltChildren]
       _ ->
         [R.BlockQuote $ nodesToInlines eltChildren]
+
+  ----- tables -----
   | eltName == "table"
   = nodesToTable eltChildren
+
+  ----- definition lists -----
   | eltName == "dl"
   = nodesToDL eltChildren
+
+  ----- page outline (skip) -----
+  -- We use an empty Para, because returning an empty list would trigger
+  -- the "grab nested inlines and wrap in a Para" fallback in nodesToInlines.
+  | eltName == "div"
+  , attrIs eltAttrs "class" "wiki-toc"
+  = [R.Para []]
+
+  ----- generic block-level elements
   | eltName `elem` ["div", "section"]
   = nodesToBlocks eltChildren
+
   | otherwise
   = []
 
@@ -252,13 +268,13 @@ nodeToInlines node@(NodeElement (Element {..}))
   -- Skip @<span class="icon"></span>@: these are icons on external links,
   -- injected by Trac itself; they'll only get in the way, so we'll skip them.
   | eltName == "span"
-  , attrIs node "class" "icon"
+  , attrIs eltAttrs "class" "icon"
   = []
 
   ------------- links -------------
   | eltName == "a"
   , Just wikiname <- takeWikiName =<< lookupAttr "href" node
-  , attrIs node "class" "wiki"
+  , attrIs eltAttrs "class" "wiki"
   = [R.WikiLink wikiname (Just . map (Text.unpack . textContent) $ eltChildren)]
 
   -- * ticket links
