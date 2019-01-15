@@ -624,7 +624,19 @@ buildWiki fast commentCache conn = do
   pages <- liftIO $ (if fast then getWikiPagesFast else getWikiPages) conn
   forM_ pages (buildPage wc)
   liftIO $ do
-    git_ wc "pull" [] >>= putStrLn
+    (git_ wc "pull" [] >>= putStrLn)
+      `catch`
+      (err :: GitException -> do
+        case gitExcExitCode err of
+          1 ->
+            -- upstream has no master branch yet - we'll ignore this and
+            -- just push.
+            pure ()
+
+          _ ->
+            -- something else went wrong, let's report it
+            throwIO err
+      )
     git_ wc "push" ["origin", "master"] >>= putStrLn
   where
     getCommentId :: Int -> Int -> IO CommentRef
