@@ -33,6 +33,7 @@ data ConversionError = ConversionError String
   deriving (Show)
 
 instance Exception ConversionError where
+  displayException (ConversionError err) = "Conversion error: " ++ err
 
 convert :: String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> LBS.ByteString -> IO String
 convert base org proj mn msrcname cm s = do
@@ -171,7 +172,7 @@ nodesToDLEntries nodes =
     go []
       = []
     go (NodeContent str : xs)
-      = error "Expected dt, found TEXT"
+      = throw $ ConversionError "Expected dt, found TEXT"
     go (headNode@(NodeElement Element{..}) : xs)
       | eltName == "dt"
       = let (ddNodes, rem) = break (not . isDD) xs
@@ -186,11 +187,20 @@ isDD (NodeElement Element{..})
 isDD _
   = False
 
+isWhitespace :: Node -> Bool
+isWhitespace (NodeContent str)
+  | Text.null str
+  = True
+  | Text.all isSpace str
+  = True
+isWhitespace _
+  = False
+
 nodesToTable :: [Node] -> [R.Block]
 nodesToTable (NodeElement (Element "tbody" _ xs) : ns) =
   nodesToTable xs ++ nodesToTable ns
 nodesToTable xs =
-  [R.Table $ map nodeToTR xs]
+  [R.Table $ map nodeToTR $ filter (not . isWhitespace) xs]
 
 nodeToTR :: Node -> R.TableRow
 nodeToTR (NodeContent str) =
@@ -201,7 +211,7 @@ nodeToTR (NodeElement Element {..})
   | eltName == "tr"
   = map nodeToTableCell eltChildren
   | otherwise
-  = error $ "Expected <tr>, but found <" ++ Text.unpack eltName ++ ">"
+  = throw $ ConversionError $ "Expected <tr>, but found <" ++ Text.unpack eltName ++ ">"
 
 nodeToTableCell :: Node -> R.TableCell
 nodeToTableCell (NodeElement Element {..})
@@ -210,7 +220,7 @@ nodeToTableCell (NodeElement Element {..})
   | eltName == "td"
   = R.TableHeaderCell $ nodesToBlocks eltChildren
   | otherwise
-  = error $ "Expected <th> or <td>, but found <" ++ Text.unpack eltName ++ ">"
+  = throw $ ConversionError $ "Expected <th> or <td>, but found <" ++ Text.unpack eltName ++ ">"
 nodeToTableCell (NodeContent str)
   = R.TableCell [R.Para [R.Str $ Text.unpack str]]
 

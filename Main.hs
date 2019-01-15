@@ -45,6 +45,7 @@ import Data.Time
 import Data.Time.Format
 import Text.Megaparsec.Error (ParseError, parseErrorPretty)
 import Data.Void
+import Network.HTTP.Client.Internal as HTTP (HttpException (..), HttpExceptionContent (..), Response (..))
 
 import Database.PostgreSQL.Simple
 import Network.HTTP.Client.TLS as TLS
@@ -637,17 +638,33 @@ buildWiki fast commentCache conn = do
           filename = baseFilename <.> "md"
           tracFilename = baseFilename <.> "trac"
       liftIO $ do
-        mbody <- withTimeout 10000 $ do
-                      printParseError wpBody $
-                        Trac.Convert.convert
-                          (showBaseUrl gitlabBaseUrl)
-                          gitlabOrganisation
-                          gitlabProjectName
-                          Nothing
-                          (Just filename)
-                          getCommentId
-                          -- dummyGetCommentId
-                          (T.unpack . T.dropWhile isSpace $ wpBody)
+        let url =
+              printf
+                "https://ghc.haskell.org/trac/ghc/wiki/%s?version=%i"
+                wpName
+                wpVersion
+
+        mbody <- dealWithHttpError .  withTimeout 10000 $ do
+                    hbody <- Scraper.httpGet url
+                    printScraperError $
+                      Scraper.convert
+                        (showBaseUrl gitlabBaseUrl)
+                        gitlabOrganisation
+                        gitlabProjectName
+                        Nothing
+                        (Just filename)
+                        getCommentId
+                        hbody
+                      -- printParseError wpBody $
+                      --   Trac.Convert.convert
+                      --     (showBaseUrl gitlabBaseUrl)
+                      --     gitlabOrganisation
+                      --     gitlabProjectName
+                      --     Nothing
+                      --     (Just filename)
+                      --     getCommentId
+                      --     -- dummyGetCommentId
+                      --     (T.unpack . T.dropWhile isSpace $ wpBody)
         printf "Create file %s in directory %s\n"
           (show filename)
           (show $ takeDirectory filename)
@@ -658,12 +675,12 @@ buildWiki fast commentCache conn = do
           Just body ->
             writeFile filename body
           Nothing -> do
-            putStrLn "PARSER TIMEOUT EXCEEDED"
+            putStrLn "CONVERSION ERROR"
             T.putStrLn wpBody
             hFlush stdout
             writeFile filename $
               printf
-                "PARSER TIMEOUT\n\nOriginal source:\n\n```trac\n%s\n```\n"
+                "CONVERSION ERROR\n\nOriginal source:\n\n```trac\n%s\n```\n"
                 wpBody
       muser <- do
         (pure $ findKnownUser wpAuthor)
@@ -692,6 +709,15 @@ printGitError action = action `catch` h
     h err = do
       putStrLn $ displayException err
 
+printScraperError :: IO String -> IO String
+printScraperError action = action `catch` h
+  where
+    h :: Scraper.ConversionError -> IO String
+    h err@(Scraper.ConversionError msg) = do
+      putStrLn $ displayException err
+      return $ printf "Conversion error:\n\n```\n%s\n```\n\n"
+        msg
+
 printParseError :: Text -> IO String -> IO String
 printParseError body action = action `catch` h
   where
@@ -700,6 +726,24 @@ printParseError body action = action `catch` h
       putStrLn $ parseErrorPretty err
       return $ printf "Parser error:\n\n```\n%s\n```\n\nOriginal source:\n\n```trac\n%s\n```\n"
         (parseErrorPretty err) body
+
+dealWithHttpError :: IO (Maybe String) -> IO (Maybe String)
+dealWithHttpError action = action `catch` h
+  where
+    h :: HttpException -> IO (Maybe String)
+    h e@(HttpExceptionRequest
+          _
+          (StatusCodeException
+            HTTP.Response { responseStatus = Status { statusCode = 404 } }
+            _
+          )
+        ) = do
+      putStrLn $ displayException e
+      return Nothing
+    h e = do
+      putStrLn $ displayException e
+      return Nothing
+
 
 ticketNumberToIssueIid (TicketNumber n) =
   IssueIid $ fromIntegral n
