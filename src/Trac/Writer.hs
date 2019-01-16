@@ -56,7 +56,8 @@ data Ref = Ref
 
 type Blocks = [Block]
 
-data Style = Style
+data Style = BulletStyle
+           | NumberedStyle
   deriving (Show)
 
 data Block = Header Int Inlines Blocks
@@ -103,8 +104,10 @@ block (Header n h bs) = do
 block (Quote is) =
   prefixed "> " <$> blocks is
 block (Para is) = inlines is
-block (List s iss) =
+block (List BulletStyle iss) =
   vcat <$> mapM (oneListItem "-") iss
+block (List NumberedStyle iss) =
+  vcat <$> mapM (oneListItem "1.") iss
 block (CodeBlock ml s) =
   return $ vcat [text "```" <> mlang, text s, text "```"]
   where

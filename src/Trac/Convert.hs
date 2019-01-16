@@ -66,7 +66,8 @@ convertBlock :: Maybe Int -> LookupComment -> R.Block -> IO Block
 convertBlock n cm (R.Header nlev is bs)
   = Header nlev <$> convertInlines n cm is <*> convertBlocks n cm bs
 convertBlock n cm (R.Para is)        = Para <$> convertInlines n cm is
-convertBlock n cm (R.List _ bs)      = List Style . map (:[]) <$> convertBlocks n cm bs
+convertBlock n cm (R.List R.BulletListType bs)      = List BulletStyle . map (:[]) <$> convertBlocks n cm bs
+convertBlock n cm (R.List R.NumberedListType bs)      = List NumberedStyle . map (:[]) <$> convertBlocks n cm bs
 convertBlock n cm (R.DefnList d)     = convertDefnListToTable n cm d
 convertBlock n cm (R.Code ty s)      = pure $ CodeBlock ty s
 convertBlock n cm (R.BlockQuote bs)  = Quote . (:[]) . Para <$> convertInlines n cm bs
