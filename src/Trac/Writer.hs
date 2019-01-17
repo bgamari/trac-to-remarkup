@@ -11,6 +11,7 @@ import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
 import Text.Casing
 import Data.List.Split
+import Data.Char (isAlphaNum)
 
 type CommentMap = M.Map (Int, Int) Int
 
@@ -281,25 +282,24 @@ mkDifferentialUrl n =
 tracWikiNameToGitlab :: String -> String
 tracWikiNameToGitlab = intercalate "/" . map (toKebab . fromHumps) . splitOn "/"
 
+-- | Escape special characters for Markdown.
+-- Shamelessly ripped out of pandoc and adapted for our needs.
 escapeMarkdown :: String -> String
-escapeMarkdown = concatMap escapeMarkdownChar
-
-escapeMarkdownChar :: Char -> String
-escapeMarkdownChar x
-  | Just escaped <- escapeHtml x
-  = escaped
-  | x `elem` markdownSpecialChars
-  = ['\\', x]
-  | otherwise
-  = [x]
-
-escapeHtml :: Char -> Maybe String
-escapeHtml '\'' = Just "&apos;"
-escapeHtml '"' = Just "&quot;"
-escapeHtml '&' = Just "&amp;"
-escapeHtml '<' = Just "&lt;"
-escapeHtml '>' = Just "&gt;"
-escapeHtml _ = Nothing
-
-markdownSpecialChars :: [Char]
-markdownSpecialChars = "*&=#[]()->`~_!"
+escapeMarkdown = go
+  where
+  go [] = []
+  go (c:cs) =
+    case c of
+       '<' -> '\\' : '<' : go cs
+       '>' -> '\\' : '>' : go cs
+       '@' -> case cs of
+                    (d:_)
+                      | isAlphaNum d || d == '_'
+                         -> '\\':'@':go cs
+                    _ -> '@':go cs
+       _ | c `elem` ['\\','`','*','_','[',']','#', '|', '^', '~'] ->
+              '\\':c:go cs
+       '|' -> '\\':'|':go cs
+       '^' -> '\\':'^':go cs
+       '~' -> '\\':'~':go cs
+       _   -> c : go cs
