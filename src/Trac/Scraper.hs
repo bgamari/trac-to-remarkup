@@ -21,6 +21,7 @@ import Trac.Writer (writeRemarkup)
 import Data.Maybe
 import Data.Char
 import Text.Read (readMaybe)
+import Data.List
 
 httpGet :: String -> IO LBS.ByteString
 httpGet url = do
@@ -284,6 +285,23 @@ nodeToInlines node@(NodeElement (Element {..}))
   = []
 
   ------------- links -------------
+  -- * ticket query links (query=...)
+  | eltName == "a"
+  , Just issueQuery <- takeIssueQuery =<< lookupAttr "href" node
+  = (nodesToInlines eltChildren)
+    ++
+    [ R.Space, R.Str "(Ticket query:", R.Space ]
+    ++ 
+    ( intercalate
+        [ R.Str ",", R.Space ]
+        [ [ R.Str (key ++ ": " ++ val) ]
+        | (key, val) <- issueQuery
+        ]
+    )
+    ++
+    [ R.Str ")" ]
+
+  -- * wiki links
   | eltName == "a"
   , Just wikiname <- takeWikiName =<< lookupAttr "href" node
   , attrIs eltAttrs "class" "wiki"
@@ -296,7 +314,6 @@ nodeToInlines node@(NodeElement (Element {..}))
 
   -- TODO:
   -- * ticket comment links
-  -- * special links (e.g. /query)
   -- * anchors (<a> without href)
   | eltName == "a"
   , Just url <- lookupAttr "href" node
@@ -315,6 +332,15 @@ takeTicketNumber url =
   readMaybe =<<
   Just . Text.unpack . Text.takeWhile isDigit =<<
   Text.stripPrefix "/trac/ghc/ticket/" url
+
+takeIssueQuery :: Text -> Maybe [(String, String)]
+takeIssueQuery url = do
+  tail <- Text.stripPrefix "/trac/ghc/query?" url
+  Just . map splitPair . Text.splitOn "&" $ tail
+  where
+    splitPair str =
+      let (l, r) = Text.breakOn "=" str
+      in (Text.unpack l, Text.unpack $ Text.drop 1 r)
 
 textToInlines :: Text -> [R.Inline]
 textToInlines = (:[]) . R.Str . Text.unpack
