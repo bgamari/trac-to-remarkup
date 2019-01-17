@@ -228,7 +228,7 @@ inline (Monospaced _ is) = return $ inside (text "`") (text "`") (text is)
 inline (Deleted is) = inside (text "~~") (text "~~") <$> inlines is
 inline (Underlined is) = inside (text "__") (text "__") <$> inlines is
 inline (Highlighted is) = inside (text "!!") (text "!!") <$> inlines is
-inline (Str str) = return $ text str
+inline (Str str) = return . text . escapeMarkdown $ str
 inline Space = return $ space
 inline (WebLink is url) = longLink url is
 inline (ObjectLink Ref) = return empty
@@ -280,3 +280,26 @@ mkDifferentialUrl n =
 
 tracWikiNameToGitlab :: String -> String
 tracWikiNameToGitlab = intercalate "/" . map (toKebab . fromHumps) . splitOn "/"
+
+escapeMarkdown :: String -> String
+escapeMarkdown = concatMap escapeMarkdownChar
+
+escapeMarkdownChar :: Char -> String
+escapeMarkdownChar x
+  | Just escaped <- escapeHtml x
+  = escaped
+  | x `elem` markdownSpecialChars
+  = ['\\', x]
+  | otherwise
+  = [x]
+
+escapeHtml :: Char -> Maybe String
+escapeHtml '\'' = Just "&apos;"
+escapeHtml '"' = Just "&quot;"
+escapeHtml '&' = Just "&amp;"
+escapeHtml '<' = Just "&lt;"
+escapeHtml '>' = Just "&gt;"
+escapeHtml _ = Nothing
+
+markdownSpecialChars :: [Char]
+markdownSpecialChars = "*&=#[]()->`~_!"
