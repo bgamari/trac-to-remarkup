@@ -47,7 +47,7 @@ writeLog logger prefix' msg = do
   let prepend = if null ctx then
                   prefix ++ " [-] "
                 else
-                  prefix ++ " [" ++ intercalate ":" ctx ++ "] "
+                  prefix ++ " [" ++ intercalate ":" (reverse ctx) ++ "] "
       rawMsg = unlines . map (prepend ++) . lines $ msg
   writeLogRaw logger rawMsg
 
