@@ -657,76 +657,77 @@ buildWiki logger fast commentCache conn = do
     getCommentId t c = fromMaybe MissingCommentRef . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
 
     buildPage :: Git.WorkingCopy -> WikiPage -> ClientM ()
-    buildPage wc WikiPage{..} = do
-      liftIO $ do
-        writeLog logger "INFO" $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
-        hFlush stdout
-      let baseFilename = wc </> (tracWikiNameToGitlab . T.unpack $ wpName)
-          filename = baseFilename <.> "md"
-          tracFilename = baseFilename <.> "trac"
-      liftIO $ do
-        let url =
-              printf
-                "https://ghc.haskell.org/trac/ghc/wiki/%s?version=%i"
-                wpName
-                wpVersion
+    buildPage wc WikiPage{..} =
+      Logging.withContext (liftLogger logger) (T.unpack wpName) $ do
+        liftIO $ do
+          writeLog logger "INFO" $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
+          hFlush stdout
+        let baseFilename = wc </> (tracWikiNameToGitlab . T.unpack $ wpName)
+            filename = baseFilename <.> "md"
+            tracFilename = baseFilename <.> "trac"
+        liftIO $ do
+          let url =
+                printf
+                  "https://ghc.haskell.org/trac/ghc/wiki/%s?version=%i"
+                  wpName
+                  wpVersion
 
-        mbody <- dealWithHttpError logger 0 .  withTimeout 10000 $ do
-                    hbody <- Scraper.httpGet url
-                    printScraperError logger $
-                      Scraper.convert
-                        (showBaseUrl gitlabBaseUrl)
-                        gitlabOrganisation
-                        gitlabProjectName
-                        Nothing
-                        (Just filename)
-                        getCommentId
-                        hbody
-                      -- printParseError wpBody $
-                      --   Trac.Convert.convert
-                      --     (showBaseUrl gitlabBaseUrl)
-                      --     gitlabOrganisation
-                      --     gitlabProjectName
-                      --     Nothing
-                      --     (Just filename)
-                      --     getCommentId
-                      --     -- dummyGetCommentId
-                      --     (T.unpack . T.dropWhile isSpace $ wpBody)
-        writeLog logger "INFO" $ printf "Create file %s in directory %s\n"
-          (show filename)
-          (show $ takeDirectory filename)
-        hFlush stdout
-        createDirectoryIfMissing True (takeDirectory filename)
-        T.writeFile tracFilename wpBody
-        case mbody of
-          Just body ->
-            writeFile filename body
-          Nothing -> do
-            writeLog logger "CONVERSION ERROR" ""
-            writeLog logger "INFO" (T.unpack wpBody)
-            writeFile filename $
-              printf
-                "CONVERSION ERROR\n\nOriginal source:\n\n```trac\n%s\n```\n"
-                wpBody
-      muser <- do
-        (pure $ findKnownUser wpAuthor)
-          |$| (listToMaybe <$> findUsersByUsername gitlabToken wpAuthor)
-          |$| (listToMaybe <$> findUsersByEmail gitlabToken wpAuthor)
-          |$| do
-            -- no user found, let's fake one
-            liftIO $ writeLog logger "AUTHOR MISMATCH" (T.unpack wpAuthor)
-            pure . Just $ User (UserId 0) wpAuthor wpAuthor Nothing
-      let User{..} = fromMaybe (User (UserId 0) "notfound" "notfound" Nothing) muser
-      let juserEmail = fromMaybe ("trac-" ++ T.unpack userUsername ++ "@haskell.org") (T.unpack <$> userEmail)
-      let commitAuthor = printf "%s <%s>" userName juserEmail
-      let commitDate = formatTime defaultTimeLocale (iso8601DateFormat Nothing) wpTime
-      let msg = fromMaybe ("Edit " ++ T.unpack wpName) (T.unpack <$> wpComment >>= unlessNull)
-      liftIO $ printGitError logger $ do
-        status <- git_ logger wc "status" ["--porcelain"]
-        writeLog logger "GIT STATUS" (show status)
-        unless (all isSpace status) $ do
-          git_ logger wc "add" ["."] >>= writeLog logger "GIT"
-          git_ logger wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= writeLog logger "GIT"
+          mbody <- dealWithHttpError logger 0 .  withTimeout 10000 $ do
+                      hbody <- Scraper.httpGet url
+                      printScraperError logger $
+                        Scraper.convert
+                          (showBaseUrl gitlabBaseUrl)
+                          gitlabOrganisation
+                          gitlabProjectName
+                          Nothing
+                          (Just filename)
+                          getCommentId
+                          hbody
+                        -- printParseError wpBody $
+                        --   Trac.Convert.convert
+                        --     (showBaseUrl gitlabBaseUrl)
+                        --     gitlabOrganisation
+                        --     gitlabProjectName
+                        --     Nothing
+                        --     (Just filename)
+                        --     getCommentId
+                        --     -- dummyGetCommentId
+                        --     (T.unpack . T.dropWhile isSpace $ wpBody)
+          writeLog logger "INFO" $ printf "Create file %s in directory %s\n"
+            (show filename)
+            (show $ takeDirectory filename)
+          hFlush stdout
+          createDirectoryIfMissing True (takeDirectory filename)
+          T.writeFile tracFilename wpBody
+          case mbody of
+            Just body ->
+              writeFile filename body
+            Nothing -> do
+              writeLog logger "CONVERSION ERROR" ""
+              writeLog logger "INFO" (T.unpack wpBody)
+              writeFile filename $
+                printf
+                  "CONVERSION ERROR\n\nOriginal source:\n\n```trac\n%s\n```\n"
+                  wpBody
+        muser <- do
+          (pure $ findKnownUser wpAuthor)
+            |$| (listToMaybe <$> findUsersByUsername gitlabToken wpAuthor)
+            |$| (listToMaybe <$> findUsersByEmail gitlabToken wpAuthor)
+            |$| do
+              -- no user found, let's fake one
+              liftIO $ writeLog logger "AUTHOR MISMATCH" (T.unpack wpAuthor)
+              pure . Just $ User (UserId 0) wpAuthor wpAuthor Nothing
+        let User{..} = fromMaybe (User (UserId 0) "notfound" "notfound" Nothing) muser
+        let juserEmail = fromMaybe ("trac-" ++ T.unpack userUsername ++ "@haskell.org") (T.unpack <$> userEmail)
+        let commitAuthor = printf "%s <%s>" userName juserEmail
+        let commitDate = formatTime defaultTimeLocale (iso8601DateFormat Nothing) wpTime
+        let msg = fromMaybe ("Edit " ++ T.unpack wpName) (T.unpack <$> wpComment >>= unlessNull)
+        liftIO $ printGitError logger $ do
+          status <- git_ logger wc "status" ["--porcelain"]
+          writeLog logger "GIT STATUS" (show status)
+          unless (all isSpace status) $ do
+            git_ logger wc "add" ["."] >>= writeLog logger "GIT"
+            git_ logger wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= writeLog logger "GIT"
 
 printGitError :: Logger -> IO () -> IO ()
 printGitError logger action = action `catch` h
