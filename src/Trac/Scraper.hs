@@ -7,6 +7,7 @@ import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.UTF8 as LUTF8
+import qualified Data.ByteString.UTF8 as UTF8
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LText
@@ -22,12 +23,21 @@ import Data.Maybe
 import Data.Char
 import Text.Read (readMaybe)
 import Data.List
+import Logging
+import Text.Printf (printf)
+import Network.HTTP.Types.Status (Status (..))
 
-httpGet :: String -> IO LBS.ByteString
-httpGet url = do
+httpGet :: Logger -> String -> IO LBS.ByteString
+httpGet logger url = withContext logger url $ do
   manager <- newTlsManager
+  writeLog logger "HTTP" $ "GET " ++ url
   rq <- parseUrlThrow url
   rp <- httpLbs rq manager
+  writeLog logger "HTTP" $
+    printf
+      "%03i %s"
+      (statusCode $ responseStatus rp)
+      (UTF8.toString . statusMessage $ responseStatus rp)
   return $ responseBody rp
 
 data ConversionError = ConversionError String

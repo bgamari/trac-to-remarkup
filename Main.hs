@@ -202,7 +202,7 @@ main = do
         putStr mdBody
       else if testScraperMode
         then forM_ scrapeUrls $ \url -> do
-          Scraper.httpGet url
+          Scraper.httpGet logger url
             >>= Scraper.convert
                   (showBaseUrl gitlabBaseUrl)
                   gitlabOrganisation
@@ -673,7 +673,7 @@ buildWiki logger fast commentCache conn = do
                   wpVersion
 
           mbody <- dealWithHttpError logger 0 .  withTimeout 10000 $ do
-                      hbody <- Scraper.httpGet url
+                      hbody <- Scraper.httpGet logger url
                       printScraperError logger $
                         Scraper.convert
                           (showBaseUrl gitlabBaseUrl)

@@ -32,6 +32,7 @@ library
                , data-default
                , http-client
                , http-client-tls
+               , http-types
                , lifted-base
                , megaparsec > 6 && < 7
                , monad-control
