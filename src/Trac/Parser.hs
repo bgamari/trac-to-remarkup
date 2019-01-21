@@ -41,6 +41,10 @@ normaliseNewlines [] =  "\n"
 
 data Inline = Bold Inlines
              | Italic Inlines
+             | Superscript Inlines
+             | Subscript Inlines
+             | Small Inlines
+             | Strikethrough Inlines
              | WikiStyle Inlines
              | Monospaced Type String
              | Link String [String]
@@ -68,7 +72,7 @@ type Type = Maybe String
 
 data Block = Header Int Inlines Blocks
            | Para Inlines
-           | List ListType [Block]
+           | List ListType [Blocks]
            | DefnList [(Blocks, [Blocks])]
            | Code Type String
            | BlockQuote Inlines
@@ -395,7 +399,7 @@ data ListType
 pList :: Parser Block
 pList =  do
   getInput >>= \s -> traceShowM ("pList", s)
-  List BulletListType <$> (try pItemListStart *> pItemList)
+  List BulletListType . map (:[]) <$> (try pItemListStart *> pItemList)
 
 pItemListStart = sc *> char '*'
 
@@ -411,14 +415,6 @@ pItemList = do
       traceShowM ("s", (show s))
       return (L.IndentMany Nothing (\ss -> return (s:ss))
                 (Para <$> some inlineNoNL <|> pList))
-
-printList :: Int -> Block -> String
-printList n (List _ (el:els)) =
-  unlines (("* " ++ printList n el): map ((replicate (2 * n) ' '  ++) .  printList (n + 1)) els)
-printList _ (Para is) = concatMap printInlines is
-
-printInlines (Str s) = s
-printInlines Space = " "
 
 link :: Parser Inline
 link = longhandLink <|> shorthandLink

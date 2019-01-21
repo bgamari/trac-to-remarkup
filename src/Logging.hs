@@ -15,6 +15,7 @@ import Control.Monad.Trans.Control
 import Data.Maybe
 import Control.Exception.Lifted
 import Data.List
+import Control.Monad.Reader
 
 data LoggerM (m :: * -> *)
   = Logger
@@ -50,6 +51,31 @@ writeLog logger prefix' msg = do
                   prefix ++ " [" ++ intercalate ":" (reverse ctx) ++ "] "
       rawMsg = unlines . map (prepend ++) . lines $ msg
   writeLogRaw logger rawMsg
+
+writeLogM :: (MonadBaseControl IO m, MonadReader Logger m)
+          => String -> String -> m ()
+writeLogM prefix msg = do
+  logger <- ask
+  writeLog (liftLogger logger) prefix msg
+
+pushContextM :: (MonadBaseControl IO m, MonadReader Logger m)
+             => String -> m ()
+pushContextM ctx = do
+  logger <- ask
+  pushContext (liftLogger logger) ctx
+
+popContextM :: (MonadBaseControl IO m, MonadReader Logger m)
+            => m (Maybe String)
+popContextM = do
+  logger <- ask
+  popContext (liftLogger logger)
+
+withContextM :: (MonadBaseControl IO m, MonadReader Logger m)
+             => String -> m a -> m a
+withContextM c =
+  bracket_
+    (pushContextM c)
+    (void popContextM)
 
 makeStdoutLogger :: forall m. (MonadBase IO m, MonadBaseControl IO m)
                  => m (LoggerM m)

@@ -204,6 +204,7 @@ main = do
         then forM_ scrapeUrls $ \url -> do
           Scraper.httpGet logger url
             >>= Scraper.convert
+                  logger
                   (showBaseUrl gitlabBaseUrl)
                   gitlabOrganisation
                   gitlabProjectName
@@ -676,6 +677,7 @@ buildWiki logger fast commentCache conn = do
                       hbody <- Scraper.httpGet logger url
                       printScraperError logger $
                         Scraper.convert
+                          logger
                           (showBaseUrl gitlabBaseUrl)
                           gitlabOrganisation
                           gitlabProjectName
@@ -703,7 +705,7 @@ buildWiki logger fast commentCache conn = do
             Just body ->
               writeFile filename body
             Nothing -> do
-              writeLog logger "CONVERSION ERROR" ""
+              writeLog logger "CONVERSION-ERROR" ""
               writeLog logger "INFO" (T.unpack wpBody)
               writeFile filename $
                 printf
@@ -715,7 +717,7 @@ buildWiki logger fast commentCache conn = do
             |$| (listToMaybe <$> findUsersByEmail gitlabToken wpAuthor)
             |$| do
               -- no user found, let's fake one
-              liftIO $ writeLog logger "AUTHOR MISMATCH" (T.unpack wpAuthor)
+              liftIO $ writeLog logger "AUTHOR-MISMATCH" (T.unpack wpAuthor)
               pure . Just $ User (UserId 0) wpAuthor wpAuthor Nothing
         let User{..} = fromMaybe (User (UserId 0) "notfound" "notfound" Nothing) muser
         let juserEmail = fromMaybe ("trac-" ++ T.unpack userUsername ++ "@haskell.org") (T.unpack <$> userEmail)
@@ -724,7 +726,7 @@ buildWiki logger fast commentCache conn = do
         let msg = fromMaybe ("Edit " ++ T.unpack wpName) (T.unpack <$> wpComment >>= unlessNull)
         liftIO $ printGitError logger $ do
           status <- git_ logger wc "status" ["--porcelain"]
-          writeLog logger "GIT STATUS" (show status)
+          writeLog logger "GIT-STATUS" (show status)
           unless (all isSpace status) $ do
             git_ logger wc "add" ["."] >>= writeLog logger "GIT"
             git_ logger wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= writeLog logger "GIT"
@@ -734,14 +736,14 @@ printGitError logger action = action `catch` h
   where
     h :: GitException -> IO ()
     h err = do
-      writeLog logger "GIT EXCEPTION" $ displayException err
+      writeLog logger "GIT-EXCEPTION" $ displayException err
 
 printScraperError :: Logger -> IO String -> IO String
 printScraperError logger action = action `catch` h
   where
     h :: Scraper.ConversionError -> IO String
     h err@(Scraper.ConversionError msg) = do
-      writeLog logger "SCRAPER EXCEPTION" $ displayException err
+      writeLog logger "SCRAPER-EXCEPTION" $ displayException err
       return $ printf "Conversion error:\n\n```\n%s\n```\n\n"
         msg
 
@@ -750,7 +752,7 @@ printParseError logger body action = action `catch` h
   where
     h :: ParseError Char Void -> IO String
     h err = do
-      writeLog logger "PARSER ERROR" $ parseErrorPretty err
+      writeLog logger "PARSER-ERROR" $ parseErrorPretty err
       return $ printf "Parser error:\n\n```\n%s\n```\n\nOriginal source:\n\n```trac\n%s\n```\n"
         (parseErrorPretty err) body
 
@@ -765,7 +767,7 @@ dealWithHttpError logger n action = action `catch` h
             _
           )
         ) = do
-      writeLog logger "HTTP ERROR" $ displayException e
+      writeLog logger "HTTP-ERROR" $ displayException e
       return Nothing
     h e@(HttpExceptionRequest _ ConnectionFailure {}) =
       retry
@@ -773,16 +775,16 @@ dealWithHttpError logger n action = action `catch` h
       retry
       
     h e = do
-      writeLog logger "HTTP ERROR" $ displayException e
+      writeLog logger "HTTP-ERROR" $ displayException e
       return Nothing
 
     retry =
       if n >= 7 then do
-        writeLog logger "HTTP ERROR" $ "Max number of retries exceeded, skipping."
+        writeLog logger "HTTP-ERROR" $ "Max number of retries exceeded, skipping."
         return Nothing
       else do
         let delaySecs = 2 ^ n
-        writeLog logger "HTTP ERROR" $ "Network error, retrying in " ++ show delaySecs ++ " seconds"
+        writeLog logger "HTTP-ERROR" $ "Network error, retrying in " ++ show delaySecs ++ " seconds"
         threadDelay (delaySecs * 1000000)
         dealWithHttpError logger (succ n) action
 
@@ -861,21 +863,21 @@ createTicketChanges logger milestoneMap getUserId commentCache storeComment iid 
     let discard = T.all isSpace body
     mcinId <- if discard
                   then do
-                    writeLog logger "COMMENT SKIPPED" ""
+                    writeLog logger "COMMENT-SKIPPED" ""
                     return Nothing
                   else do
                     let note = CreateIssueNote { cinBody = body
                                                , cinCreatedAt = Just $ changeTime tc
                                                }
                     cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
-                    writeLog logger "NOTE CREATED" $ show commentNumber ++ " -> " ++ show cinResp
+                    writeLog logger "NOTE-CREATED" $ show commentNumber ++ " -> " ++ show cinResp
                     return (Just . NoteRef . inrId $ cinResp)
 
     -- Translate issue link lists to link/unlink events.
     withFieldDiff (ticketRelated $ changeFields tc) $ \toLink toUnlink -> do
       forM_ toLink $ \(TicketNumber n) -> do
         let otherIid = IssueIid . fromIntegral $ n
-        writeLog logger "LINK ISSUES" $ show iid ++ " <-> " ++ show otherIid
+        writeLog logger "LINK-ISSUES" $ show iid ++ " <-> " ++ show otherIid
         linkResult <- createIssueLink
           gitlabToken
           (Just authorUid)
@@ -890,7 +892,7 @@ createTicketChanges logger milestoneMap getUserId commentCache storeComment iid 
     -- Translate CC field changes to subscribe/unsubscribe events.
     withFieldDiff (ticketCC $ changeFields tc) $ \toSubscribe toUnsubscribe -> do
       forM_ toSubscribe $ \subscribeUsername -> do
-        writeLog logger "SUBSCRIBE USER" $ show subscribeUsername
+        writeLog logger "SUBSCRIBE-USER" $ show subscribeUsername
         uid <-
           (findUserByUsername gitlabToken subscribeUsername >>= \case
             Just u -> pure $ userId u
@@ -953,7 +955,7 @@ createTicketChanges logger milestoneMap getUserId commentCache storeComment iid 
                 traceM $ "Issue edit: " ++ show edit
                 void $ editIssue gitlabToken (Just authorUid) project iid edit
                 meid <- fmap inrId <$> getNewestIssueNote gitlabToken (Just authorUid) project iid
-                writeLog logger "CREATE ISSUE EDIT" $ show meid
+                writeLog logger "CREATE-ISSUE-EDIT" $ show meid
                 return $ NoteRef <$> meid
 
     -- Handle commit comments. A commit comment is a comment that has been
@@ -965,9 +967,9 @@ createTicketChanges logger milestoneMap getUserId commentCache storeComment iid 
     -- directly to the commit.
     mhash <- if (isCommitComment tc)
               then do
-                writeLog logger "COMMIT COMMENT" $ (fromMaybe "(no comment)" $ show <$> changeComment tc)
+                writeLog logger "COMMIT-COMMENT" $ (fromMaybe "(no comment)" $ show <$> changeComment tc)
                 let mcommitInfo = extractCommitHash =<< changeComment tc
-                writeLog logger "COMMIT COMMENT" $ fromMaybe "???" (fst <$> mcommitInfo)
+                writeLog logger "COMMIT-COMMENT" $ fromMaybe "???" (fst <$> mcommitInfo)
                 return $ do
                   (hash, mrepo) <- mcommitInfo
                   return $ CommitRef hash mrepo
@@ -985,7 +987,7 @@ createTicketChanges logger milestoneMap getUserId commentCache storeComment iid 
         M.insertWith (flip (++)) (unIssueIid iid) [mid]
       storeComment (unIssueIid iid) mid
       (M.lookup (unIssueIid iid) <$> readMVar commentCache))
-      >>= writeLog logger "STORE COMMENT" . show
+      >>= writeLog logger "STORE-COMMENT" . show
 
     return ()
 

@@ -26,6 +26,7 @@ import Data.List
 import Logging
 import Text.Printf (printf)
 import Network.HTTP.Types.Status (Status (..))
+import Control.Monad.Reader
 
 httpGet :: Logger -> String -> IO LBS.ByteString
 httpGet logger url = withContext logger url $ do
@@ -40,21 +41,33 @@ httpGet logger url = withContext logger url $ do
       (UTF8.toString . statusMessage $ responseStatus rp)
   return $ responseBody rp
 
+(<++>) :: Applicative f => f [a] -> f [a] -> f [a]
+a <++> b = (++) <$> a <*> b
+infixr 5 <++>
+
 data ConversionError = ConversionError String
   deriving (Show)
 
 instance Exception ConversionError where
   displayException (ConversionError err) = "Conversion error: " ++ err
 
-convert :: String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> LBS.ByteString -> IO String
-convert base org proj mn msrcname cm s = do
-  let blocks =
-        nodeToBlocks $
-        maybe (throw $ ConversionError "Main content not found") id $
-        extractPayload $
-        parseHtml s
+type Convert = ReaderT Logger IO
 
-  fmap (writeRemarkup base org proj) $ convertBlocks mn cm blocks
+runConvert :: Logger -> Convert a -> IO a
+runConvert logger action =
+  runReaderT action logger
+
+convert :: Logger -> String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> LBS.ByteString -> IO String
+convert logger base org proj mn msrcname cm s =
+  withContext logger "convert" $ do
+    blocks <- runConvert logger $
+          nodeToBlocks $
+          maybe (throw $ ConversionError "Main content not found") id $
+          extractPayload $
+          parseHtml s
+
+    fmap (writeRemarkup base org proj) $
+      convertBlocks mn cm blocks
 
 parseHtml :: LBS.ByteString -> [Node]
 parseHtml =
@@ -69,6 +82,14 @@ extractPayload (x:xs) =
 attrIs :: HashMap.HashMap Text Text -> Text -> Text -> Bool
 attrIs eltAttrs key val
   | HashMap.lookup key eltAttrs == Just val
+  = True
+  | otherwise
+  = False
+
+attrContains :: HashMap.HashMap Text Text -> Text -> Text -> Bool
+attrContains eltAttrs key val
+  | Just aval <- HashMap.lookup key eltAttrs
+  , val `elem` Text.words aval
   = True
   | otherwise
   = False
@@ -92,79 +113,81 @@ extractPayloadFrom node@(NodeElement (Element {..}))
 -- that happens, we want to group consecutive inline elements and wrap
 -- each group in a single Para, but we need to keep existing block-level
 -- elements intact.
-nodesToBlocks :: [Node] -> [R.Block]
-nodesToBlocks nodes =
-  go $ zip (map nodeToInlines nodes) (map nodeToBlocks nodes)
+nodesToBlocks :: [Node] -> Convert [R.Block]
+nodesToBlocks nodes = do
+  (is, bs) <- go nodes -- =<< (zip <$> mapM nodeToInlines nodes <*> mapM nodeToBlocks nodes)
+  if null is then
+    pure bs
+  else
+    pure (R.Para is : bs)
   where
-    -- This case deals with successful block-level parses: this means
-    -- that the node results in one or more proper Blocks, and we can
-    -- just use those.
-    go ((_, blocks):xs)
-      | not (null blocks)
-      = blocks ++ go xs
-    -- Base case. The usual.
-    go [] = []
-    -- This is what happens when we have no successful block-level parse:
-    -- we grab all consecutive non-parses from the start of the list,
-    -- wrap them in a Para, and recurse into the rest of the list.
-    go xs
-      = let (is, rem) = break (not . null . snd) xs
-        in (R.Para $ concatMap fst is) :
-           go rem
+    go :: [Node] -> Convert ([R.Inline], [R.Block])
+    go [] = pure ([], [])
+    go (n:ns) = do
+      b <- nodeToBlocks n
+      (is, bs) <- go ns
+      if null b then do
+        -- Block-level parse unsuccessful, interpret as inlines instead
+        i <- nodeToInlines n
+        pure (i ++ is, bs)
+      else
+        pure ([], b ++ [R.Para is] ++ bs)
 
-childrenToBlocks :: Node -> [R.Block]
-childrenToBlocks (NodeElement Element{..})
-  = nodesToBlocks eltChildren
-childrenToBlocks _ = []
+childrenToBlocks :: Node -> Convert [R.Block]
+childrenToBlocks node@(NodeElement Element{..})
+  = withContextM (dumpNode node) (nodesToBlocks eltChildren)
+childrenToBlocks _
+  = pure []
 
 -- | Generate 'Blocks' for a 'Node'. Non-block nodes, including text content,
 -- yield an empty list.
-nodeToBlocks :: Node -> [R.Block]
-nodeToBlocks (NodeContent str) = []
-nodeToBlocks (NodeElement elem) = elemToBlocks elem
+nodeToBlocks :: Node -> Convert [R.Block]
+nodeToBlocks (NodeContent str) =
+  pure []
+nodeToBlocks node@(NodeElement elem) =
+  withContextM (dumpNode node) (elemToBlocks elem)
+
+one :: a -> [a]
+one = (:[])
 
 -- | Generate 'Blocks' for an 'Element'. Non-block elements yield an
 -- empty list.
-elemToBlocks :: Element -> [R.Block]
+elemToBlocks :: Element -> Convert [R.Block]
 elemToBlocks Element {..}
   ----- lists -----
   | eltName == "ul"
-  = [R.List R.BulletListType $ map nodeToLi eltChildren]
+  = one . R.List R.BulletListType <$> mapM childrenToBlocks eltChildren
   | eltName == "ol"
+  = one . R.List R.NumberedListType <$> mapM childrenToBlocks eltChildren
 
   ----- code blocks -----
-  = [R.List R.NumberedListType $ map nodeToLi eltChildren]
   | eltName == "pre"
   = let syntaxMay = Text.unpack <$> HashMap.lookup "class" eltAttrs
-    in [R.Code syntaxMay $ Text.unpack . mconcat . map textContent $ eltChildren]
+    in pure . one . R.Code syntaxMay . Text.unpack . mconcat . map textContent $ eltChildren
 
   ----- paragraphs -----
   | eltName == "p"
-  = [R.Para $ nodesToInlines eltChildren]
+  = one . R.Para <$> nodesToInlines eltChildren
 
   ----- divider -----
   | eltName == "hr"
-  = [R.HorizontalLine]
+  = pure . one $ R.HorizontalLine
 
   ----- headings -----
   | eltName == "h1"
-  = [R.Header 1 (nodesToInlines eltChildren) []]
+  = fmap one $ R.Header 1 <$> nodesToInlines eltChildren <*> pure []
   | eltName == "h2"
-  = [R.Header 2 (nodesToInlines eltChildren) []]
+  = fmap one $ R.Header 2 <$> nodesToInlines eltChildren <*> pure []
   | eltName == "h3"
-  = [R.Header 3 (nodesToInlines eltChildren) []]
+  = fmap one $ R.Header 3 <$> nodesToInlines eltChildren <*> pure []
   | eltName == "h4"
-  = [R.Header 4 (nodesToInlines eltChildren) []]
+  = fmap one $ R.Header 4 <$> nodesToInlines eltChildren <*> pure []
   | eltName == "h5"
-  = [R.Header 5 (nodesToInlines eltChildren) []]
+  = fmap one $ R.Header 5 <$> nodesToInlines eltChildren <*> pure []
   | eltName == "h6"
-  = [R.Header 6 (nodesToInlines eltChildren) []]
+  = fmap one $ R.Header 6 <$> nodesToInlines eltChildren <*> pure []
   | eltName == "blockquote"
-  = case HashMap.lookup "class" eltAttrs of
-      Just "citation" ->
-        [R.Discussion $ nodesToBlocks eltChildren]
-      _ ->
-        [R.BlockQuote $ nodesToInlines eltChildren]
+  = one . R.Discussion <$> nodesToBlocks eltChildren
 
   ----- tables -----
   | eltName == "table"
@@ -179,33 +202,34 @@ elemToBlocks Element {..}
   -- the "grab nested inlines and wrap in a Para" fallback in nodesToInlines.
   | eltName == "div"
   , attrIs eltAttrs "class" "wiki-toc"
-  = [R.Para []]
+  = pure . one $ R.Para []
 
   ----- generic block-level elements
   | eltName `elem` ["div", "section"]
   = nodesToBlocks eltChildren
 
   | otherwise
-  = []
+  = pure []
 
-nodesToDL :: [Node] -> [R.Block]
-nodesToDL = (:[]) . R.DefnList . nodesToDLEntries
+nodesToDL :: [Node] -> Convert [R.Block]
+nodesToDL = fmap (one . R.DefnList) . nodesToDLEntries
 
-nodesToDLEntries :: [Node] -> [(R.Blocks, [R.Blocks])]
+nodesToDLEntries :: [Node] -> Convert [(R.Blocks, [R.Blocks])]
 nodesToDLEntries nodes =
   go nodes
   where
-    go :: [Node] -> [(R.Blocks, [R.Blocks])]
+    go :: [Node] -> Convert [(R.Blocks, [R.Blocks])]
     go []
-      = []
+      = pure []
     go (NodeContent str : xs)
       = throw $ ConversionError "Expected dt, found TEXT"
     go (headNode@(NodeElement Element{..}) : xs)
       | eltName == "dt"
-      = let (ddNodes, rem) = break (not . isDD) xs
-            dds = map childrenToBlocks ddNodes
-            dt = childrenToBlocks headNode
-        in ((dt, dds) : go rem)
+      = do
+          let (ddNodes, rem) = break (not . isDD) xs
+          dds <- mapM childrenToBlocks ddNodes
+          dt <- childrenToBlocks headNode
+          ((dt, dds) :) <$> go rem
 
 isDD :: Node -> Bool
 isDD (NodeElement Element{..})
@@ -223,116 +247,154 @@ isWhitespace (NodeContent str)
 isWhitespace _
   = False
 
-nodesToTable :: [Node] -> [R.Block]
-nodesToTable = (:[]) . R.Table . nodesToTableRows
+nodesToTable :: [Node] -> Convert [R.Block]
+nodesToTable = fmap (one . R.Table) . nodesToTableRows
 
-nodesToTableRows :: [Node] -> [R.TableRow]
+nodesToTableRows :: [Node] -> Convert [R.TableRow]
 nodesToTableRows (NodeElement (Element "thead" _ xs) : ns) =
   -- the Parser AST doesn't allow us to distinguish thead from tbody,
   -- so we'll just throw everything in one big table.
-  nodesToTableRows xs ++ nodesToTableRows ns
+  (++) <$> nodesToTableRows xs <*> nodesToTableRows ns
 nodesToTableRows (NodeElement (Element "tbody" _ xs) : ns) =
-  nodesToTableRows xs ++ nodesToTableRows ns
+  (++) <$> nodesToTableRows xs <*> nodesToTableRows ns
 nodesToTableRows [] =
-  []
+  pure []
 nodesToTableRows (x:xs)
   | isWhitespace x
   = nodesToTableRows xs
   | otherwise
-  = nodeToTR x : nodesToTableRows xs
+  = (:) <$> nodeToTR x <*> nodesToTableRows xs
 
-nodeToTR :: Node -> R.TableRow
+nodeToTR :: Node -> Convert R.TableRow
 nodeToTR (NodeContent str) =
   -- Nothing useful we can do here other than dump the string in a
   -- single-cell table row
-  [R.TableCell [R.Para [R.Str $ Text.unpack str]]]
+  pure . one . R.TableCell . one . R.Para . one . R.Str $ Text.unpack str
 nodeToTR (NodeElement Element {..})
   | eltName == "tr"
-  = map nodeToTableCell eltChildren
+  = mapM nodeToTableCell eltChildren
   | otherwise
   = throw $ ConversionError $ "Expected <tr>, but found <" ++ Text.unpack eltName ++ ">"
 
-nodeToTableCell :: Node -> R.TableCell
+nodeToTableCell :: Node -> Convert R.TableCell
 nodeToTableCell (NodeElement Element {..})
   | eltName == "th"
-  = R.TableHeaderCell $ nodesToBlocks eltChildren
+  = R.TableHeaderCell <$> nodesToBlocks eltChildren
   | eltName == "td"
-  = R.TableHeaderCell $ nodesToBlocks eltChildren
+  = R.TableHeaderCell <$> nodesToBlocks eltChildren
   | otherwise
   = throw $ ConversionError $ "Expected <th> or <td>, but found <" ++ Text.unpack eltName ++ ">"
 nodeToTableCell (NodeContent str)
-  = R.TableCell [R.Para [R.Str $ Text.unpack str]]
+  = pure . R.TableCell . one . R.Para . one . R.Str $ Text.unpack str
 
-nodeToLi :: Node -> R.Block
-nodeToLi node = R.Para $ nodeToInlines node
+nodesToInlines :: [Node] -> Convert [R.Inline]
+nodesToInlines = fmap concat . mapM nodeToInlines
 
-nodesToInlines :: [Node] -> [R.Inline]
-nodesToInlines = concatMap nodeToInlines
+nodeToInlines :: Node -> Convert [R.Inline]
+nodeToInlines node@(NodeElement {}) =
+  withContextM (dumpNode node) (go node)
+  where
+    go node@(NodeElement (Element {..}))
+      ------------- common markup -------------
+      | eltName == "b" || eltName == "strong"
+      = one . R.Bold <$> nodesToInlines eltChildren
+      | eltName == "i" || eltName == "em"
+      = one . R.Italic <$> nodesToInlines eltChildren
+      | eltName == "tt" || eltName == "code"
+      = pure . one . R.Monospaced Nothing . Text.unpack $ textContent node
+      | eltName == "sub"
+      = one . R.Subscript <$> nodesToInlines eltChildren
+      | eltName == "sup"
+      = one . R.Superscript <$> nodesToInlines eltChildren
+      | eltName == "small"
+      = one . R.Small <$> nodesToInlines eltChildren
+      | eltName == "del"
+      = one . R.Strikethrough <$> nodesToInlines eltChildren
 
-nodeToInlines :: Node -> [R.Inline]
-nodeToInlines node@(NodeElement (Element {..}))
-  ------------- common markup -------------
-  | eltName == "b" || eltName == "strong"
-  = [R.Bold $ nodesToInlines eltChildren]
-  | eltName == "i" || eltName == "em"
-  = [R.Italic $ nodesToInlines eltChildren]
-  | eltName == "tt" || eltName == "code"
-  = [R.Monospaced Nothing . Text.unpack $ textContent node]
+      ------------- inline media -------------
+      | eltName == "img"
+      = pure . one $ R.Image
 
-  ------------- inline media -------------
-  | eltName == "img"
-  = [R.Image]
+      ------------- line break -------------
+      | eltName == "br"
+      = pure . one $ R.LineBreak
 
-  ------------- line break -------------
-  | eltName == "br"
-  = [R.LineBreak]
+      ------------- cruft -------------
+      -- Skip @<span class="icon"></span>@: these are icons on external links,
+      -- injected by Trac itself; they'll only get in the way, so we'll skip them.
+      | eltName == "span"
+      , attrIs eltAttrs "class" "icon"
+      = pure []
 
-  ------------- cruft -------------
-  -- Skip @<span class="icon"></span>@: these are icons on external links,
-  -- injected by Trac itself; they'll only get in the way, so we'll skip them.
-  | eltName == "span"
-  , attrIs eltAttrs "class" "icon"
-  = []
+      ------------- links -------------
+      -- * ticket query links (query=...)
+      | eltName == "a"
+      , Just issueQuery <- takeIssueQuery =<< lookupAttr "href" node
+      = (nodesToInlines eltChildren)
+        <++>
+        pure [ R.Space, R.Str "(Ticket query:", R.Space ]
+        <++> 
+        ( pure $
+            intercalate
+              [ R.Str ",", R.Space ]
+              [ [ R.Str (key ++ ": " ++ val) ]
+              | (key, val) <- issueQuery
+              ]
+        )
+        <++>
+        pure [ R.Str ")" ]
 
-  ------------- links -------------
-  -- * ticket query links (query=...)
-  | eltName == "a"
-  , Just issueQuery <- takeIssueQuery =<< lookupAttr "href" node
-  = (nodesToInlines eltChildren)
-    ++
-    [ R.Space, R.Str "(Ticket query:", R.Space ]
-    ++ 
-    ( intercalate
-        [ R.Str ",", R.Space ]
-        [ [ R.Str (key ++ ": " ++ val) ]
-        | (key, val) <- issueQuery
-        ]
-    )
-    ++
-    [ R.Str ")" ]
+      -- * wiki links
+      | eltName == "a"
+      , Just wikiname <- takeWikiName =<< lookupAttr "href" node
+      , attrContains eltAttrs "class" "wiki"
+      = pure [R.WikiLink wikiname (Just . map (Text.unpack . textContent) $ eltChildren)]
 
-  -- * wiki links
-  | eltName == "a"
-  , Just wikiname <- takeWikiName =<< lookupAttr "href" node
-  , attrIs eltAttrs "class" "wiki"
-  = [R.WikiLink wikiname (Just . map (Text.unpack . textContent) $ eltChildren)]
+      -- * missing links
+      | eltName == "a"
+      , attrContains eltAttrs "class" "missing"
+      = nodesToInlines eltChildren
 
-  -- * ticket links
-  | eltName == "a"
-  , Just ticketNumber <- takeTicketNumber =<< lookupAttr "href" node
-  = [R.TracTicketLink ticketNumber (Just . map (Text.unpack . textContent) $ eltChildren)]
+      -- * ticket links
+      | eltName == "a"
+      , Just ticketNumber <- takeTicketNumber =<< lookupAttr "href" node
+      = pure [R.TracTicketLink ticketNumber (Just . map (Text.unpack . textContent) $ eltChildren)]
 
-  -- TODO:
-  -- * ticket comment links
-  -- * anchors (<a> without href)
-  | eltName == "a"
-  , Just url <- lookupAttr "href" node
-  = [R.Link (Text.unpack url) (map (Text.unpack . textContent) $ eltChildren)]
+      -- TODO:
+      -- * ticket comment links
+      -- * anchors (<a> without href)
+      | eltName == "a"
+      , Just url <- lookupAttr "href" node
+      = pure [R.Link (Text.unpack url) (map (Text.unpack . textContent) $ eltChildren)]
 
-  ------------- text content -------------
-  | otherwise
-  = nodesToInlines eltChildren
-nodeToInlines n = textToInlines $ textContent n
+      ------------- known plain text content -------------
+      | eltName == "span"
+      = nodesToInlines eltChildren
+
+      ------------- unknown/ignored/skipped: text content + warn -------------
+      | otherwise
+      = do
+          writeLogM "SKIPPED" (dumpNode node)
+          nodesToInlines eltChildren
+
+nodeToInlines n = pure . textToInlines $ textContent n
+
+dumpNode :: Node -> String
+dumpNode (NodeContent str) =
+  "[[TEXT]]"
+dumpNode (NodeElement Element {..}) =
+  printf "<%s%s>...</%s>"
+    eltName
+    (dumpAttribs eltAttrs)
+    eltName
+
+dumpAttribs :: HashMap.HashMap AttrName AttrValue -> String
+dumpAttribs attribs =
+  concat
+    [ printf " %s='%s'" name value
+    | (name, value)
+    <- sort $ HashMap.toList attribs
+    ]
 
 takeWikiName :: Text -> Maybe String
 takeWikiName = fmap Text.unpack . Text.stripPrefix "/trac/ghc/wiki/"
@@ -353,7 +415,7 @@ takeIssueQuery url = do
       in (Text.unpack l, Text.unpack $ Text.drop 1 r)
 
 textToInlines :: Text -> [R.Inline]
-textToInlines = (:[]) . R.Str . Text.unpack
+textToInlines = one . R.Str . Text.unpack
 
 textContent :: Node -> Text
 textContent (NodeContent str) =
