@@ -55,6 +55,8 @@ import Servant.Client
 
 import qualified Git 
 import Git (git, git_, GitException)
+import Logging (LoggerM (..), Logger, makeStdoutLogger, writeLog, liftLogger)
+import qualified Logging
 
 import GitLab.Tickets
 import GitLab.Common
@@ -158,6 +160,7 @@ tee f x = f x >> pure x
 
 main :: IO ()
 main = do
+    logger <- makeStdoutLogger
     args <- getArgs
     let opts = S.fromList . filter (isPrefixOf "-") $ args
         skipMilestones = "-skip-milestones" `S.member` opts
@@ -178,7 +181,7 @@ main = do
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
-    getUserId <- mkUserIdOracle conn env
+    getUserId <- mkUserIdOracle logger conn env
 
     (finishedMutations, finishMutation) <- openStateFile mutationStateFile
 
@@ -187,7 +190,7 @@ main = do
     if testParserMode
       then do
         wpBody <- getContents
-        mdBody <- printParseError (T.pack wpBody) $
+        mdBody <- printParseError logger (T.pack wpBody) $
                     Trac.Convert.convert
                       (showBaseUrl gitlabBaseUrl)
                       gitlabOrganisation
@@ -200,7 +203,6 @@ main = do
       else if testScraperMode
         then forM_ scrapeUrls $ \url -> do
           Scraper.httpGet url
-            -- >>= tee LBS.putStrLn
             >>= Scraper.convert
                   (showBaseUrl gitlabBaseUrl)
                   gitlabOrganisation
@@ -211,16 +213,17 @@ main = do
             >>= putStrLn
           
       else do
-        milestoneMap <- either (error . show) id <$> runClientM (makeMilestones (not skipMilestones) conn) env
+        milestoneMap <- either (error . show) id <$> runClientM (makeMilestones logger (not skipMilestones) conn) env
 
-        unless skipTickets $ printErrors $ do
-          putStrLn "Making tickets"
+        unless skipTickets $ Logging.withContext logger "tickets" $ printErrors logger $ do
+          writeLog logger "Making tickets" ""
           mutations <- filter (\m -> not $ m `S.member` finishedMutations) .
                        filter (\m -> ticketMutationTicket m `S.member` ticketNumbers || S.null ticketNumbers)
                        <$> Trac.getTicketMutations conn
           let makeMutations' ts = do
                   runClientM
                     (makeMutations
+                      logger
                       conn
                       milestoneMap
                       getUserId
@@ -229,24 +232,26 @@ main = do
                       storeComment
                       ts)
                     env >>= throwLeft >>= print
-                  putStrLn "makeMutations' done"
+                  writeLog logger "makeMutations' done" ""
           makeMutations' mutations
 
-        unless skipAttachments $ printErrors $ do
-          putStrLn "Making attachments"
-          runClientM (makeAttachments conn getUserId) env >>= throwLeft >>= print
+        unless skipAttachments
+          $ Logging.withContext logger "attachments"
+          $ printErrors logger
+          $ runClientM (makeAttachments logger conn getUserId) env >>= throwLeft >>= print
 
-        unless skipWiki $ printErrors $ do
-          putStrLn "Making wiki"
-          void $ runClientM (buildWiki skipWikiHistory commentCache conn) env >>= throwLeft
+        unless skipWiki
+          $ Logging.withContext logger "wiki" $ printErrors logger
+          $ void
+          $ runClientM (buildWiki logger skipWikiHistory commentCache conn) env >>= throwLeft
 
     where
       throwLeft :: (Exception e, Monad m, MonadThrow m) => Either e a -> m a
       throwLeft = either throwM return
 
-      printErrors :: IO () -> IO ()
-      printErrors action =
-        action `catch` (\(err :: SomeException) -> putStrLn (displayException err))
+      printErrors :: Logger -> IO () -> IO ()
+      printErrors logger action =
+        action `catch` (\(err :: SomeException) -> writeLog logger "EXCEPTION" (displayException err))
 
 dummyGetCommentId :: Int -> Int -> IO CommentRef
 dummyGetCommentId t c = pure MissingCommentRef
@@ -324,13 +329,13 @@ type UserLookupM = MaybeT (StateT UserIdCache ClientM)
 
 type UserIdCache = M.Map Username UserId
 
-mkUserIdOracle :: Connection -> ClientEnv -> IO UserIdOracle
-mkUserIdOracle conn clientEnv = do
+mkUserIdOracle :: Logger -> Connection -> ClientEnv -> IO UserIdOracle
+mkUserIdOracle logger conn clientEnv = do
     cacheVar <- newMVar mempty
     let runIt :: Username -> StateT UserIdCache IO (Maybe UserId)
         runIt username = StateT $ \cache -> do
             res <- runClientM (runStateT (runMaybeT $ getUserId $ T.strip username) cache) clientEnv
-            liftIO $ putStrLn $ "Resolve user " ++ show username ++ " -> " ++ show (fmap fst res)
+            writeLog logger "RESOLVE USER" $ show username ++ " -> " ++ show (fmap fst res)
             either throwM pure res
     return $ liftIO
            . fmap (fromMaybe $ error "couldn't resolve user id")
@@ -340,7 +345,7 @@ mkUserIdOracle conn clientEnv = do
     tee :: (Show a, Monad m, MonadIO m) => String -> m a -> m a
     tee msg a = do
       x <- a
-      liftIO . putStrLn $ msg ++ show x
+      liftIO . writeLog logger "INFO" $ msg ++ show x
       return x
 
     getUserId :: Username -> UserLookupM UserId
@@ -367,14 +372,14 @@ mkUserIdOracle conn clientEnv = do
 
         tryLookupName :: UserLookupM UserId
         tryLookupName = do
-            liftIO . putStrLn $ "Find by username: " ++ T.unpack username'
+            liftIO . writeLog logger "FIND USER BY NAME" $ T.unpack username'
             fmap userId $ MaybeT $ lift $ findUserByUsername gitlabToken username'
 
         tryLookupEmail :: UserLookupM UserId
         tryLookupEmail = do
             m_email <- liftIO $ getUserAttribute conn Trac.Email username
             let cuEmail = fromMaybe ("trac+"<>username'<>"@haskell.org") m_email
-            liftIO . putStrLn $ "Find by email: " ++ T.unpack cuEmail
+            liftIO . writeLog logger "FIND USER BY EMAIL" $ T.unpack cuEmail
             fmap userId $ MaybeT $ lift $ tee "user by email" $ findUserByEmail gitlabToken cuEmail
 
         tryCreate :: UserLookupM UserId
@@ -389,13 +394,13 @@ mkUserIdOracle conn clientEnv = do
                                  Just u -> u
                                  Nothing -> username'
                   cuSkipConfirmation = True
-              liftIO $ putStrLn $ "Creating user " <> show username <> " (" <> show cuEmail <> ")"
+              liftIO $ writeLog logger "CREATE USER" $ show username <> " (" <> show cuEmail <> ")"
               lift $ createUserMaybe gitlabToken CreateUser {..}
             case uidMay of
               Nothing ->
                 fail "User already exists"
               Just uid -> do
-                liftIO $ putStrLn $ "User created " <> show username <> " as " <> show uid
+                liftIO $ writeLog logger "USER CREATED" $ show username <> " as " <> show uid
                 lift . lift $ addProjectMember gitlabToken project uid Reporter
                 return uid
 
@@ -405,8 +410,8 @@ mkUserIdOracle conn clientEnv = do
             lift $ modify' $ M.insert username uid
             return uid
 
-makeMilestones :: Bool -> Connection -> ClientM MilestoneMap
-makeMilestones actuallyMakeThem conn = do
+makeMilestones :: Logger -> Bool -> Connection -> ClientM MilestoneMap
+makeMilestones logger actuallyMakeThem conn = do
     when actuallyMakeThem $ do
       milestones <- liftIO $ Trac.getMilestones conn
       mconcat <$> mapM createMilestone' milestones
@@ -427,13 +432,13 @@ makeMilestones actuallyMakeThem conn = do
 
     onError :: (MonadIO m, Exception a) => a -> m MilestoneMap
     onError err = do
-        liftIO $ putStrLn $ "Failed to create milestone: " ++ displayException err
+        liftIO $ writeLog logger "FAILED TO CREATE MILESTONE" $ displayException err
         return M.empty
 
-makeAttachment :: UserIdOracle -> Attachment -> ClientM ()
-makeAttachment getUserId (Attachment{..})
+makeAttachment :: Logger -> UserIdOracle -> Attachment -> ClientM ()
+makeAttachment logger getUserId (Attachment{..})
   | TicketAttachment ticketNum <- aResource = do
-        liftIO $ putStrLn $ "Attachment " ++ show (aResource, aFilename)
+        liftIO $ writeLog logger "ATTACHMENT" $ show (aResource, aFilename)
         mgr <- manager <$> ask
         content <- liftIO $ Trac.Web.fetchTicketAttachment tracBaseUrl ticketNum aFilename
         uid <- getUserId aAuthor
@@ -478,24 +483,25 @@ makeAttachment getUserId (Attachment{..})
                                    }
         void $ createIssueNote gitlabToken (Just uid) project iid note
 
-makeAttachments :: Connection -> UserIdOracle -> ClientM ()
-makeAttachments conn getUserId = do
+makeAttachments :: Logger -> Connection -> UserIdOracle -> ClientM ()
+makeAttachments logger conn getUserId = do
     attachments <- liftIO $ getAttachments conn
     (finishedAttachments, finishAttachment) <-
         liftIO $ openStateFile attachmentStateFile
     let makeAttachment' a
           | aIdent `S.member` finishedAttachments = return ()
           | otherwise = handleAll onError $ flip catchError onError $ do
-            makeAttachment getUserId a
+            makeAttachment logger getUserId a
             liftIO $ finishAttachment aIdent
           where
             aIdent = (aResource a, aFilename a, aTime a)
             onError :: (MonadIO m, Show a) => a -> m ()
             onError err =
-                liftIO $ putStrLn $ "Failed to create attachment " ++ show a ++ ": " ++ show err
+                liftIO $ writeLog logger "ERROR" $ "Failed to create attachment " ++ show a ++ ": " ++ show err
     mapM_ makeAttachment' $ attachments
 
-makeMutations :: Connection
+makeMutations :: Logger
+              -> Connection
               -> MilestoneMap
               -> UserIdOracle
               -> CommentCacheVar
@@ -503,39 +509,47 @@ makeMutations :: Connection
               -> StoreComment
               -> [Trac.TicketMutation]
               -> ClientM ()
-makeMutations conn milestoneMap getUserId commentCache finishMutation storeComment mutations = do
+makeMutations logger' conn milestoneMap getUserId commentCache finishMutation storeComment mutations = do
   mapM_ makeMutation' mutations
   where
-    makeMutation' m = handleAll onError $ flip catchError onError $ do
-      liftIO $ print m
-      case ticketMutationType m of
-        -- Create a new ticket
-        Trac.CreateTicket -> do
-          ticket <- liftIO $ fromMaybe (error "Ticket not found") <$> Trac.getTicket (ticketMutationTicket m) conn
-          iid@(IssueIid issueID) <- createTicket milestoneMap getUserId commentCache ticket
-          if ((fromIntegral . getTicketNumber . ticketNumber $ ticket) == issueID)
-            then
-              (liftIO $ finishMutation m)
-            else
-              (liftIO $ putStrLn $ "TICKET NUMBER MISMATCH: " ++ show (ticketNumber ticket) ++ " /= " ++ show iid)
-            
-        -- Apply a ticket change
-        Trac.ChangeTicket -> do
-          changes <- liftIO $ Trac.getTicketChanges conn (ticketMutationTicket m) (Just $ ticketMutationTime m)
-          liftIO $ print changes
-          let iid = IssueIid (fromIntegral . getTicketNumber . ticketMutationTicket $ m)
-          createTicketChanges
-              milestoneMap
-              getUserId
-              commentCache
-              storeComment
-              iid $ collapseChanges changes
-          liftIO $ finishMutation m
+    logger :: LoggerM ClientM
+    logger = liftLogger logger'
+
+    makeMutation' m =
+      handleAll onError $
+      flip catchError onError $
+      Logging.withContext logger (show . getTicketNumber . ticketMutationTicket $ m) $ do
+        -- liftIO $ print m
+        case ticketMutationType m of
+          -- Create a new ticket
+          Trac.CreateTicket -> do
+            ticket <- liftIO $ fromMaybe (error "Ticket not found") <$> Trac.getTicket (ticketMutationTicket m) conn
+            iid@(IssueIid issueID) <- createTicket milestoneMap getUserId commentCache ticket
+            if ((fromIntegral . getTicketNumber . ticketNumber $ ticket) == issueID)
+              then
+                (liftIO $ finishMutation m)
+              else
+                (writeLog logger "TICKET NUMBER MISMATCH" $ show (ticketNumber ticket) ++ " /= " ++ show iid)
+              
+          -- Apply a ticket change
+          Trac.ChangeTicket -> do
+            changes <- liftIO $ Trac.getTicketChanges conn (ticketMutationTicket m) (Just $ ticketMutationTime m)
+            writeLog logger "NOTICE" $ show changes
+            let iid = IssueIid (fromIntegral . getTicketNumber . ticketMutationTicket $ m)
+
+            createTicketChanges
+                logger
+                milestoneMap
+                getUserId
+                commentCache
+                storeComment
+                iid $ collapseChanges changes
+            liftIO $ finishMutation m
 
       where
-        onError :: (MonadIO m, Show a) => a -> m ()
+        onError :: (Show a) => a -> ClientM ()
         onError err =
-            liftIO $ putStrLn $ "Failed to execute ticket mutation: " ++ show err
+            writeLog logger "ERROR" $ "Failed to execute ticket mutation: " ++ show err
 
 collapseChanges :: [TicketChange] -> TicketChange
 collapseChanges tcs = TicketChange
@@ -617,14 +631,14 @@ withTimeout delayMS action =
     reaper = do
       threadDelay (delayMS * 1000)
 
-buildWiki :: Bool -> CommentCacheVar -> Connection -> ClientM ()
-buildWiki fast commentCache conn = do
-  wc <- liftIO $ Git.clone wikiRemoteUrl
-  liftIO $ putStrLn $ "Building wiki in " ++ wc
+buildWiki :: Logger -> Bool -> CommentCacheVar -> Connection -> ClientM ()
+buildWiki logger fast commentCache conn = do
+  wc <- liftIO $ Git.clone logger wikiRemoteUrl
+  liftIO $ writeLog logger "WIKI BUILD DIR" wc
   pages <- liftIO $ (if fast then getWikiPagesFast else getWikiPages) conn
   forM_ pages (buildPage wc)
   liftIO $ do
-    (git_ wc "pull" [] >>= putStrLn)
+    (git_ logger wc "pull" [] >>= writeLog logger "GIT")
           `catch`
           (\(err :: GitException) -> do
             case Git.gitExcExitCode err of
@@ -637,14 +651,15 @@ buildWiki fast commentCache conn = do
                 -- something else went wrong, let's report it
                 throwM err
           )
-    git_ wc "push" ["origin", "master"] >>= putStrLn
+    git_ logger wc "push" ["origin", "master"] >>= writeLog logger "GIT"
   where
     getCommentId :: Int -> Int -> IO CommentRef
     getCommentId t c = fromMaybe MissingCommentRef . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
 
+    buildPage :: Git.WorkingCopy -> WikiPage -> ClientM ()
     buildPage wc WikiPage{..} = do
       liftIO $ do
-        putStrLn $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
+        writeLog logger "INFO" $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
         hFlush stdout
       let baseFilename = wc </> (tracWikiNameToGitlab . T.unpack $ wpName)
           filename = baseFilename <.> "md"
@@ -656,9 +671,9 @@ buildWiki fast commentCache conn = do
                 wpName
                 wpVersion
 
-        mbody <- dealWithHttpError 0 .  withTimeout 10000 $ do
+        mbody <- dealWithHttpError logger 0 .  withTimeout 10000 $ do
                     hbody <- Scraper.httpGet url
-                    printScraperError $
+                    printScraperError logger $
                       Scraper.convert
                         (showBaseUrl gitlabBaseUrl)
                         gitlabOrganisation
@@ -677,7 +692,7 @@ buildWiki fast commentCache conn = do
                       --     getCommentId
                       --     -- dummyGetCommentId
                       --     (T.unpack . T.dropWhile isSpace $ wpBody)
-        printf "Create file %s in directory %s\n"
+        writeLog logger "INFO" $ printf "Create file %s in directory %s\n"
           (show filename)
           (show $ takeDirectory filename)
         hFlush stdout
@@ -687,9 +702,8 @@ buildWiki fast commentCache conn = do
           Just body ->
             writeFile filename body
           Nothing -> do
-            putStrLn "CONVERSION ERROR"
-            T.putStrLn wpBody
-            hFlush stdout
+            writeLog logger "CONVERSION ERROR" ""
+            writeLog logger "INFO" (T.unpack wpBody)
             writeFile filename $
               printf
                 "CONVERSION ERROR\n\nOriginal source:\n\n```trac\n%s\n```\n"
@@ -700,47 +714,47 @@ buildWiki fast commentCache conn = do
           |$| (listToMaybe <$> findUsersByEmail gitlabToken wpAuthor)
           |$| do
             -- no user found, let's fake one
-            liftIO $ putStrLn $ "Author not matched: " ++ T.unpack wpAuthor
+            liftIO $ writeLog logger "AUTHOR MISMATCH" (T.unpack wpAuthor)
             pure . Just $ User (UserId 0) wpAuthor wpAuthor Nothing
       let User{..} = fromMaybe (User (UserId 0) "notfound" "notfound" Nothing) muser
       let juserEmail = fromMaybe ("trac-" ++ T.unpack userUsername ++ "@haskell.org") (T.unpack <$> userEmail)
       let commitAuthor = printf "%s <%s>" userName juserEmail
       let commitDate = formatTime defaultTimeLocale (iso8601DateFormat Nothing) wpTime
       let msg = fromMaybe ("Edit " ++ T.unpack wpName) (T.unpack <$> wpComment >>= unlessNull)
-      liftIO $ printGitError $ do
-        status <- git_ wc "status" ["--porcelain"]
-        putStrLn $ "GIT STATUS: " ++ show status
+      liftIO $ printGitError logger $ do
+        status <- git_ logger wc "status" ["--porcelain"]
+        writeLog logger "GIT STATUS" (show status)
         unless (all isSpace status) $ do
-          git_ wc "add" ["."] >>= putStrLn
-          git_ wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= putStrLn
+          git_ logger wc "add" ["."] >>= writeLog logger "GIT"
+          git_ logger wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= writeLog logger "GIT"
 
-printGitError :: IO () -> IO ()
-printGitError action = action `catch` h
+printGitError :: Logger -> IO () -> IO ()
+printGitError logger action = action `catch` h
   where
     h :: GitException -> IO ()
     h err = do
-      putStrLn $ displayException err
+      writeLog logger "GIT EXCEPTION" $ displayException err
 
-printScraperError :: IO String -> IO String
-printScraperError action = action `catch` h
+printScraperError :: Logger -> IO String -> IO String
+printScraperError logger action = action `catch` h
   where
     h :: Scraper.ConversionError -> IO String
     h err@(Scraper.ConversionError msg) = do
-      putStrLn $ displayException err
+      writeLog logger "SCRAPER EXCEPTION" $ displayException err
       return $ printf "Conversion error:\n\n```\n%s\n```\n\n"
         msg
 
-printParseError :: Text -> IO String -> IO String
-printParseError body action = action `catch` h
+printParseError :: Logger -> Text -> IO String -> IO String
+printParseError logger body action = action `catch` h
   where
     h :: ParseError Char Void -> IO String
     h err = do
-      putStrLn $ parseErrorPretty err
+      writeLog logger "PARSER ERROR" $ parseErrorPretty err
       return $ printf "Parser error:\n\n```\n%s\n```\n\nOriginal source:\n\n```trac\n%s\n```\n"
         (parseErrorPretty err) body
 
-dealWithHttpError :: Int -> IO (Maybe String) -> IO (Maybe String)
-dealWithHttpError n action = action `catch` h
+dealWithHttpError :: Logger -> Int -> IO (Maybe String) -> IO (Maybe String)
+dealWithHttpError logger n action = action `catch` h
   where
     h :: HttpException -> IO (Maybe String)
     h e@(HttpExceptionRequest
@@ -750,7 +764,7 @@ dealWithHttpError n action = action `catch` h
             _
           )
         ) = do
-      putStrLn $ displayException e
+      writeLog logger "HTTP ERROR" $ displayException e
       return Nothing
     h e@(HttpExceptionRequest _ ConnectionFailure {}) =
       retry
@@ -758,18 +772,18 @@ dealWithHttpError n action = action `catch` h
       retry
       
     h e = do
-      putStrLn $ displayException e
+      writeLog logger "HTTP ERROR" $ displayException e
       return Nothing
 
     retry =
       if n >= 7 then do
-        putStrLn $ "Max number of retries exceeded, skipping."
+        writeLog logger "HTTP ERROR" $ "Max number of retries exceeded, skipping."
         return Nothing
       else do
         let delaySecs = 2 ^ n
-        putStrLn $ "Network error, retrying in " ++ show delaySecs ++ " seconds"
+        writeLog logger "HTTP ERROR" $ "Network error, retrying in " ++ show delaySecs ++ " seconds"
         threadDelay (delaySecs * 1000000)
-        dealWithHttpError (succ n) action
+        dealWithHttpError logger (succ n) action
 
 
 ticketNumberToIssueIid (TicketNumber n) =
@@ -803,14 +817,15 @@ withFieldDiff (Update old new) handler =
     else
       return Nothing
  
-createTicketChanges :: MilestoneMap
+createTicketChanges :: LoggerM ClientM
+                    -> MilestoneMap
                     -> UserIdOracle
                     -> CommentCacheVar
                     -> StoreComment
                     -> IssueIid
                     -> TicketChange
                     -> ClientM ()
-createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
+createTicketChanges logger milestoneMap getUserId commentCache storeComment iid tc = do
     liftIO $ print tc
     authorUid <- getUserId $ changeAuthor tc
     let t = case iid of IssueIid n -> TicketNumber $ fromIntegral n
@@ -841,42 +856,40 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                   -- [ ("User", changeAuthor tc) -- ]
                   (changeFields tc)
             ]
-    liftIO $ putStrLn $ "NOTE: " ++ show body
+    writeLog logger "NOTE" $ show body
     let discard = T.all isSpace body
     mcinId <- if discard
                   then do
-                    liftIO $ putStrLn $ "COMMENT SKIPPED"
+                    writeLog logger "COMMENT SKIPPED" ""
                     return Nothing
                   else do
                     let note = CreateIssueNote { cinBody = body
                                                , cinCreatedAt = Just $ changeTime tc
                                                }
                     cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
-                    liftIO $ putStrLn $
-                      "NOTE CREATED: " ++ show commentNumber ++ " -> " ++ show cinResp
+                    writeLog logger "NOTE CREATED" $ show commentNumber ++ " -> " ++ show cinResp
                     return (Just . NoteRef . inrId $ cinResp)
 
     -- Translate issue link lists to link/unlink events.
     withFieldDiff (ticketRelated $ changeFields tc) $ \toLink toUnlink -> do
       forM_ toLink $ \(TicketNumber n) -> do
         let otherIid = IssueIid . fromIntegral $ n
-        liftIO $ putStrLn $ "LINK ISSUES: " ++ show iid ++ " <-> " ++ show otherIid
+        writeLog logger "LINK ISSUES" $ show iid ++ " <-> " ++ show otherIid
         linkResult <- createIssueLink
           gitlabToken
           (Just authorUid)
           project
           iid
           (CreateIssueLink project iid project otherIid)
-        liftIO $ putStrLn $ "LINKED: " ++ show linkResult
+        writeLog logger "LINKED" $ show linkResult
           
-      liftIO $ do
-        putStrLn $ "LINK: " ++ (show toLink)
-        putStrLn $ "UNLINK: " ++ (show toUnlink)
+      writeLog logger "LINK" (show toLink)
+      writeLog logger "UNLINK" (show toUnlink)
 
     -- Translate CC field changes to subscribe/unsubscribe events.
     withFieldDiff (ticketCC $ changeFields tc) $ \toSubscribe toUnsubscribe -> do
       forM_ toSubscribe $ \subscribeUsername -> do
-        liftIO $ putStrLn $ "SUBSCRIBE USER: " ++ show subscribeUsername
+        writeLog logger "SUBSCRIBE USER" $ show subscribeUsername
         uid <-
           (findUserByUsername gitlabToken subscribeUsername >>= \case
             Just u -> pure $ userId u
@@ -890,10 +903,9 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                     (Just uid)
                     project
                     iid
-        liftIO $ putStrLn $ "SUBSCRIBED: " ++ show result
-      liftIO $ do
-        putStrLn $ "SUBSCRIBE: " ++ (show toSubscribe)
-        putStrLn $ "UNSUBSCRIBE: " ++ (show toUnsubscribe)
+        writeLog logger "SUBSCRIBED" $ show result
+      writeLog logger "SUBSCRIBE" $ (show toSubscribe)
+      writeLog logger "UNSUBSCRIBE" $ (show toUnsubscribe)
 
     -- Field updates. Figure out which fields to update.
     let fields = hoistFields newValue $ changeFields tc
@@ -940,7 +952,7 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
                 traceM $ "Issue edit: " ++ show edit
                 void $ editIssue gitlabToken (Just authorUid) project iid edit
                 meid <- fmap inrId <$> getNewestIssueNote gitlabToken (Just authorUid) project iid
-                liftIO $ putStrLn $ "Issue edit created: " ++ show meid
+                writeLog logger "CREATE ISSUE EDIT" $ show meid
                 return $ NoteRef <$> meid
 
     -- Handle commit comments. A commit comment is a comment that has been
@@ -952,9 +964,9 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
     -- directly to the commit.
     mhash <- if (isCommitComment tc)
               then do
-                liftIO $ putStrLn $ "COMMIT COMMENT: " ++ (fromMaybe "(no comment)" $ show <$> changeComment tc)
+                writeLog logger "COMMIT COMMENT" $ (fromMaybe "(no comment)" $ show <$> changeComment tc)
                 let mcommitInfo = extractCommitHash =<< changeComment tc
-                liftIO $ putStrLn $ "COMMIT COMMENT: " ++ fromMaybe "???" (fst <$> mcommitInfo)
+                writeLog logger "COMMIT COMMENT" $ fromMaybe "???" (fst <$> mcommitInfo)
                 return $ do
                   (hash, mrepo) <- mcommitInfo
                   return $ CommitRef hash mrepo
@@ -965,13 +977,14 @@ createTicketChanges milestoneMap getUserId commentCache storeComment iid tc = do
     -- apppropriate note reference (pointing to a Note, a Commit, or marking
     -- the comment as missing), and append it to both the in-memory store and
     -- the state file.
-    liftIO $ do
+    (liftIO $ do
       let mid = fromMaybe MissingCommentRef $ mcinId <|> meid <|> mhash
       modifyMVar_ commentCache $
         return .
         M.insertWith (flip (++)) (unIssueIid iid) [mid]
       storeComment (unIssueIid iid) mid
-      (M.lookup (unIssueIid iid) <$> readMVar commentCache) >>= print
+      (M.lookup (unIssueIid iid) <$> readMVar commentCache))
+      >>= writeLog logger "STORE COMMENT" . show
 
     return ()
 

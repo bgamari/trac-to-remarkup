@@ -8,6 +8,7 @@ import System.IO
 import System.IO.Temp
 import Control.Exception
 import Text.Printf (printf)
+import Logging
 
 type WorkingCopy = FilePath
 
@@ -30,9 +31,9 @@ instance Exception GitException where
       gitExcStderr
 
 -- | Make a raw call to git
-gitRaw :: [String] -> String -> IO String
-gitRaw args inp = do
-  printf "git %s\n" (unwords args)
+gitRaw :: Logger -> [String] -> String -> IO String
+gitRaw logger args inp = do
+  writeLog logger "GIT" $ printf "%s\n" (unwords args)
   hFlush stdout
   (errno, out, err) <- readProcessWithExitCode "git" args inp
   case errno of
@@ -40,17 +41,17 @@ gitRaw args inp = do
     ExitFailure i -> throw $ GitException i out err
 
 -- | Clone a git repo into a temporary directory
-clone :: Remote -> IO WorkingCopy
-clone remote = do
+clone :: Logger -> Remote -> IO WorkingCopy
+clone logger remote = do
   tmpdir <- getCanonicalTemporaryDirectory
   dirname <- createTempDirectory tmpdir "git"
-  gitRaw ["clone", remote, dirname] ""
+  gitRaw logger ["clone", remote, dirname] ""
   return dirname
 
 -- | Run a git subcommand in the given working copy
-git :: WorkingCopy -> String -> [String] -> String -> IO String
-git w cmd args inp =
-  gitRaw (["-C", w] ++ (cmd:args)) inp
+git :: Logger -> WorkingCopy -> String -> [String] -> String -> IO String
+git logger w cmd args inp =
+  gitRaw logger (["-C", w] ++ (cmd:args)) inp
 
-git_ :: WorkingCopy -> String -> [String] -> IO String
-git_ w cmd args = git w cmd args ""
+git_ :: Logger -> WorkingCopy -> String -> [String] -> IO String
+git_ logger w cmd args = git logger w cmd args ""

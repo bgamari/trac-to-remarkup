@@ -21,30 +21,34 @@ library
                       Trac.Db.Types,
                       Trac.Web,
                       Trac.Scraper,
+                      Logging,
                       Git
-  build-depends:       base >=4.9 && <4.13,
-                       bytestring,
-                       casing >=0.1.4.0 && <=0.2,
-                       data-default,
-                       megaparsec > 6 && < 7,
-                       NoTrace,
-                       http-client-tls,
-                       http-client,
-                       mtl,
-                       text,
-                       unordered-containers,
-                       containers,
-                       temporary,
-                       time,
-                       split,
-                       postgresql-simple,
-                       process,
-                       aeson,
-                       taggy,
-                       process,
-                       utf8-string,
-                       servant,
-                       servant-client
+  build-depends: base >=4.9 && <4.13
+               , NoTrace
+               , aeson
+               , bytestring
+               , casing >=0.1.4.0 && <=0.2
+               , containers
+               , data-default
+               , http-client
+               , http-client-tls
+               , lifted-base
+               , megaparsec > 6 && < 7
+               , monad-control
+               , mtl
+               , postgresql-simple
+               , process
+               , process
+               , servant
+               , servant-client
+               , split
+               , taggy
+               , temporary
+               , transformers-base
+               , text
+               , time
+               , unordered-containers
+               , utf8-string
   hs-source-dirs:      src
   default-language:    Haskell2010
 
