@@ -78,26 +78,27 @@ executable trac-import
   main-is:             Main.hs
   other-modules:       Settings
   ghc-options:         -threaded
-  build-depends:       base,
-                       async,
-                       bytestring,
-                       connection,
-                       containers,
-                       data-default,
-                       directory,
-                       exceptions >= 0.9,
-                       filepath,
-                       gitlab-servant,
-                       http-client-tls,
-                       http-client,
-                       http-types,
-                       megaparsec > 6 && < 7,
-                       mtl,
-                       postgresql-simple,
-                       servant-client,
-                       stm,
-                       text,
-                       time,
-                       trac-to-remarkup,
-                       transformers
+  build-depends: base
+               , async
+               , bytestring
+               , connection
+               , containers
+               , data-default
+               , directory
+               , exceptions >= 0.9
+               , filepath
+               , gitlab-servant
+               , http-client-tls
+               , http-client
+               , http-types
+               , megaparsec > 6 && < 7
+               , mtl
+               , postgresql-simple
+               , servant-client
+               , stm
+               , text
+               , time
+               , trac-to-remarkup
+               , lifted-base
+               , transformers
 

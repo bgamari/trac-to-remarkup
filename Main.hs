@@ -11,7 +11,7 @@ module Main where
 import Data.Char
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Catch
+import Control.Monad.Catch hiding (bracket)
 import Control.Monad.IO.Class
 import Control.Monad.Error.Class
 import Control.Monad.Trans.Class
@@ -19,6 +19,7 @@ import Control.Monad.Reader.Class
 import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.State
 import Control.Concurrent
+import Control.Exception.Lifted (bracket)
 import Control.Concurrent.Async (mapConcurrently_, race_, race)
 import Data.Default (def)
 import Data.Foldable
@@ -170,6 +171,7 @@ main = do
         skipWikiHistory = "-skip-wiki-history" `S.member` opts
         testParserMode = "-test-parser" `S.member` opts
         testScraperMode = "-test-scraper" `S.member` opts
+        keepWikiGit = "-keep-wiki-git" `S.member` opts
     let ticketNumbers = S.fromList
                       . map (TicketNumber . read)
                       . filter (all isDigit)
@@ -245,7 +247,7 @@ main = do
         unless skipWiki
           $ Logging.withContext logger "wiki" $ printErrors logger
           $ void
-          $ runClientM (buildWiki logger skipWikiHistory commentCache conn) env >>= throwLeft
+          $ runClientM (buildWiki logger skipWikiHistory keepWikiGit commentCache conn) env >>= throwLeft
 
     where
       throwLeft :: (Exception e, Monad m, MonadThrow m) => Either e a -> m a
@@ -635,27 +637,38 @@ withTimeout delayMS action =
     reaper = do
       threadDelay (delayMS * 1000)
 
-buildWiki :: Logger -> Bool -> CommentCacheVar -> Connection -> ClientM ()
-buildWiki logger fast commentCache conn = do
-  wc <- liftIO $ Git.clone logger wikiRemoteUrl
-  liftIO $ writeLog logger "WIKI BUILD DIR" wc
-  pages <- liftIO $ (if fast then getWikiPagesFast else getWikiPages) conn
-  forM_ pages (buildPage wc)
-  liftIO $ do
-    (git_ logger wc "pull" [] >>= writeLog logger "GIT")
-          `catch`
-          (\(err :: GitException) -> do
-            case Git.gitExcExitCode err of
-              1 ->
-                -- upstream has no master branch yet - we'll ignore this and
-                -- just push.
-                pure ()
+buildWiki :: Logger -> Bool -> Bool -> CommentCacheVar -> Connection -> ClientM ()
+buildWiki logger fast keepGit commentCache conn = do
+  bracket
+    (liftIO $ do
+      Git.clone logger wikiRemoteUrl
+    )
+    (\wc -> liftIO $ do
+        if keepGit
+          then do
+            writeLog logger "GIT" $ printf "Keeping git working copy at %s" wc
+          else
+            Git.deleteWorkingCopy logger wc >>= writeLog logger "GIT"
+    )
+    $ \wc -> do
+      liftIO $ writeLog logger "WIKI BUILD DIR" wc
+      pages <- liftIO $ (if fast then getWikiPagesFast else getWikiPages) conn
+      forM_ pages (buildPage wc)
+      liftIO $ do
+        (git_ logger wc "pull" [] >>= writeLog logger "GIT")
+              `catch`
+              (\(err :: GitException) -> do
+                case Git.gitExcExitCode err of
+                  1 ->
+                    -- upstream has no master branch yet - we'll ignore this and
+                    -- just push.
+                    pure ()
 
-              _ ->
-                -- something else went wrong, let's report it
-                throwM err
-          )
-    git_ logger wc "push" ["origin", "master"] >>= writeLog logger "GIT"
+                  _ ->
+                    -- something else went wrong, let's report it
+                    throwM err
+              )
+        git_ logger wc "push" ["origin", "master"] >>= writeLog logger "GIT"
   where
     getCommentId :: Int -> Int -> IO CommentRef
     getCommentId t c = fromMaybe MissingCommentRef . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache

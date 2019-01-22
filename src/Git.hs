@@ -33,8 +33,7 @@ instance Exception GitException where
 -- | Make a raw call to git
 gitRaw :: Logger -> [String] -> String -> IO String
 gitRaw logger args inp = do
-  writeLog logger "GIT" $ printf "%s\n" (unwords args)
-  hFlush stdout
+  writeLog logger "GIT" $ printf "%s" (unwords args)
   (errno, out, err) <- readProcessWithExitCode "git" args inp
   case errno of
     ExitSuccess -> return out
@@ -52,6 +51,14 @@ clone logger remote = do
 git :: Logger -> WorkingCopy -> String -> [String] -> String -> IO String
 git logger w cmd args inp =
   gitRaw logger (["-C", w] ++ (cmd:args)) inp
+
+deleteWorkingCopy :: Logger -> WorkingCopy -> IO String
+deleteWorkingCopy logger w = do
+  writeLog logger "GIT" $ printf "Delete working copy at %s" w
+  (errno, out, err) <- readProcessWithExitCode "rm" ["-rf", w] ""
+  case errno of
+    ExitSuccess -> return out
+    ExitFailure i -> throw $ GitException i out err
 
 git_ :: Logger -> WorkingCopy -> String -> [String] -> IO String
 git_ logger w cmd args = git logger w cmd args ""
