@@ -4,6 +4,8 @@
 {-#LANGUAGE RankNTypes #-}
 {-#LANGUAGE KindSignatures #-}
 {-#LANGUAGE ScopedTypeVariables #-}
+{-#LANGUAGE MultiParamTypeClasses #-}
+{-#LANGUAGE FlexibleInstances #-}
 module Logging
 where
 
@@ -26,6 +28,12 @@ data LoggerM (m :: * -> *)
       }
 
 type Logger = LoggerM IO
+
+class Monad m => MonadLogger m where
+  getLogger :: m (LoggerM m)
+
+instance (MonadBase b m, MonadBaseControl b m) => MonadLogger (ReaderT (LoggerM b) m) where
+  getLogger = liftLogger <$> ask
 
 liftLogger :: (MonadBase b m, MonadBaseControl b m) => LoggerM b -> LoggerM m
 liftLogger (Logger w g s p)
@@ -52,25 +60,25 @@ writeLog logger prefix' msg = do
       rawMsg = map (prepend ++) . lines $ msg
   writeLogRaw logger rawMsg
 
-writeLogM :: (MonadBaseControl IO m, MonadReader Logger m)
+writeLogM :: (MonadLogger m, MonadBaseControl IO m)
           => String -> String -> m ()
 writeLogM prefix msg = do
-  logger <- ask
-  writeLog (liftLogger logger) prefix msg
+  logger <- getLogger
+  writeLog logger prefix msg
 
-pushContextM :: (MonadBaseControl IO m, MonadReader Logger m)
+pushContextM :: (MonadLogger m)
              => String -> m ()
 pushContextM ctx = do
-  logger <- ask
-  pushContext (liftLogger logger) ctx
+  logger <- getLogger
+  pushContext logger ctx
 
-popContextM :: (MonadBaseControl IO m, MonadReader Logger m)
+popContextM :: (MonadLogger m)
             => m (Maybe String)
 popContextM = do
-  logger <- ask
-  popContext (liftLogger logger)
+  logger <- getLogger
+  popContext logger
 
-withContextM :: (MonadBaseControl IO m, MonadReader Logger m)
+withContextM :: (MonadLogger m, MonadBaseControl IO m)
              => String -> m a -> m a
 withContextM c =
   bracket_

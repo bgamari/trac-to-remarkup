@@ -235,14 +235,15 @@ main = do
                       finishMutation
                       storeComment
                       ts)
-                    env >>= throwLeft >>= print
+                    env >>= throwLeft
                   writeLog logger "makeMutations' done" ""
           makeMutations' mutations
 
         unless skipAttachments
           $ Logging.withContext logger "attachments"
           $ printErrors logger
-          $ runClientM (makeAttachments logger conn getUserId) env >>= throwLeft >>= print
+          $ runClientM (makeAttachments logger conn getUserId) env
+            >>= throwLeft
 
         unless skipWiki
           $ Logging.withContext logger "wiki" $ printErrors logger
@@ -523,7 +524,6 @@ makeMutations logger' conn milestoneMap getUserId commentCache finishMutation st
       handleAll onError $
       flip catchError onError $
       Logging.withContext logger (show . getTicketNumber . ticketMutationTicket $ m) $ do
-        -- liftIO $ print m
         case ticketMutationType m of
           -- Create a new ticket
           Trac.CreateTicket -> do
@@ -588,7 +588,8 @@ createTicket :: Logger
              -> Ticket
              -> ClientM IssueIid
 createTicket logger' milestoneMap getUserId commentCache t = do
-    liftIO $ print $ ticketNumber t
+    let logger = liftLogger logger'
+    writeLog logger "TICKET-NR" . show $ ticketNumber t
     creatorUid <- getUserId $ ticketCreator t
     descriptionBody <- liftIO $
           tracToMarkdown logger' commentCache (ticketNumber t) $
@@ -601,7 +602,7 @@ createTicket logger' milestoneMap getUserId commentCache t = do
             , fieldsTable extraRows fields
             ]
         fields = ticketFields t
-    liftIO $ print fields
+    writeLog logger "FIELDS" . show $ fields
     let owner = runIdentity . ticketOwner $ fields
     ownerUid <- if T.null owner
                   then
@@ -618,7 +619,7 @@ createTicket logger' milestoneMap getUserId commentCache t = do
                             , ciWeight = Just $ prioToWeight $ runIdentity $ ticketPriority fields
                             , ciAssignees = (:[]) <$> ownerUid
                             }
-    liftIO $ print issue
+    writeLog logger "ISSUE" . show $ issue
     let ignore404 (FailureResponse resp)
           | 404 <- statusCode $ responseStatusCode resp
           = return ()
@@ -626,7 +627,7 @@ createTicket logger' milestoneMap getUserId commentCache t = do
           = throwError e
     deleteIssue gitlabToken Nothing project iid `catchError` ignore404
     ir <- createIssue gitlabToken (Just creatorUid) project issue
-    liftIO $ print ir
+    liftIO . writeLog logger' "ISSUE-CREATED" . show $ ir
     return $ irIid ir
 
 withTimeout :: Int -> IO a -> IO (Maybe a)
@@ -846,7 +847,7 @@ createTicketChanges :: Logger
                     -> ClientM ()
 createTicketChanges logger' milestoneMap getUserId commentCache storeComment iid tc = do
     let logger = liftLogger logger'
-    liftIO $ print tc
+    writeLog logger "TICKET-CHANGE" . show $ tc
     authorUid <- getUserId $ changeAuthor tc
     let t = case iid of IssueIid n -> TicketNumber $ fromIntegral n
 
@@ -966,7 +967,7 @@ createTicketChanges logger' milestoneMap getUserId commentCache storeComment iid
                          , eiAssignees = (:[]) <$> ownerUid
                          , eiKeywords = ticketKeywords fields
                          }
-    liftIO $ print edit
+    writeLog logger "ISSUE-EDIT" . show $ edit
     meid <- if nullEditIssue edit
               then
                 return Nothing

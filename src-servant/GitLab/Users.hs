@@ -73,10 +73,7 @@ createUserMaybe :: AccessToken -> CreateUser -> ClientM (Maybe UserId)
 createUserMaybe tok cu =
     (Just <$> createUser tok cu)
     `catchError`
-    (\err -> do
-        liftIO $ print err
-        return Nothing
-    )
+    (const $ return Nothing)
 
 
 ----------------------------------------------------------------------

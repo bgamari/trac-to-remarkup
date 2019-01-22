@@ -120,4 +120,5 @@ executable trac-import
                , trac-to-remarkup
                , lifted-base
                , transformers
+  default-language:    Haskell2010
 

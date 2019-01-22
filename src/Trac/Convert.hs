@@ -1,4 +1,6 @@
 {-#LANGUAGE LambdaCase #-}
+{-#LANGUAGE FlexibleInstances #-}
+{-#LANGUAGE FlexibleContexts #-}
 
 module Trac.Convert (convert, convertIgnoreErrors, convertBlocks, CommentMap, LookupComment, runConvert) where
 
@@ -27,6 +29,9 @@ data ConvertContext
       }
 
 type Convert = ReaderT ConvertContext IO
+
+instance MonadLogger (ReaderT ConvertContext IO) where
+  getLogger = liftLogger <$> asks logger
 
 runConvert :: Logger -> Maybe Int -> LookupComment -> Convert a -> IO a
 runConvert logger mn cm action =
@@ -167,7 +172,7 @@ convertInline (R.CommentLink mt c mlabel) = do
   let mlabelInline = fmap (map Str) mlabel
   case mticketN of
     Nothing -> do
-      writeLogC "CONVERT-WARNING" $
+      writeLogM "CONVERT-WARNING" $
         printf "No ticket number (%s, %s, %s)"
           (show n)
           (show mt)
@@ -181,7 +186,7 @@ convertInline (R.CommentLink mt c mlabel) = do
         (CommitRef hash mrepo) ->
           pure $ GitCommitLink (fromMaybe (prettyCommit hash mrepo) mlabelInline) hash mrepo
         MissingCommentRef -> do
-          writeLogC "CONVERT-WARNING" $
+          writeLogM "CONVERT-WARNING" $
             printf "Could not find comment (%s, %s, %s)"
               (show n)
               (show mt)
@@ -192,10 +197,5 @@ convertInline (R.Superscript is) = Superscript <$> convertInlines is
 convertInline (R.Subscript is) = Subscript <$> convertInlines is
 convertInline (R.Strikethrough is) = Deleted <$> convertInlines is
 convertInline e = do
-  writeLogC "CONVERT-WARNING" $ "not handled: " ++ show e
+  writeLogM "CONVERT-WARNING" $ "not handled: " ++ show e
   pure $ Str $ "not handled: "  ++ show e
-
-writeLogC :: String -> String -> Convert ()
-writeLogC prefix msg = do
-  l <- asks logger
-  writeLog (liftLogger l) prefix msg
