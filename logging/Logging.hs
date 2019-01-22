@@ -4,8 +4,6 @@
 {-#LANGUAGE RankNTypes #-}
 {-#LANGUAGE KindSignatures #-}
 {-#LANGUAGE ScopedTypeVariables #-}
-{-#LANGUAGE MultiParamTypeClasses #-}
-{-#LANGUAGE FlexibleInstances #-}
 module Logging
 where
 
@@ -28,17 +26,6 @@ data LoggerM (m :: * -> *)
       }
 
 type Logger = LoggerM IO
-
-class MonadLogger m where
-  getLogger :: m (LoggerM m)
-
-instance (MonadBase b m, MonadBaseControl b m) => MonadLogger (ReaderT (LoggerM b) m) where
-  getLogger = liftLogger <$> ask
-
-getLoggerBy :: (MonadBase b m, MonadBaseControl b m)
-            => (s -> LoggerM b)
-            -> ReaderT s m (LoggerM m)
-getLoggerBy f = liftLogger <$> asks f
 
 liftLogger :: (MonadBase b m, MonadBaseControl b m) => LoggerM b -> LoggerM m
 liftLogger (Logger w g s p)

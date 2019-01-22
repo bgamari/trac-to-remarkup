@@ -22,6 +22,7 @@ import Servant.API
 import Servant.Client
 import GitLab.Common
 import Control.Monad.IO.Class (liftIO)
+import Logging
 
 ----------------------------------------------------------------------
 -- getIssue
@@ -293,11 +294,12 @@ instance FromJSON CreateMilestoneResp where
     parseJSON = withObject "create milestone response" $ \o -> do
         CreateMilestoneResp <$> o .: "id"
 
-createMilestone :: AccessToken -> Maybe UserId
+createMilestone :: Logger
+                -> AccessToken -> Maybe UserId
                 -> ProjectId -> CreateMilestone
                 -> ClientM MilestoneId
-createMilestone tok sudo prj cm = do
-    liftIO $ putStrLn $ "Create milestone: " ++ show cm
+createMilestone logger tok sudo prj cm = do
+    liftIO $ writeLog logger "CREATE-MILESTONE" $ show cm
     CreateMilestoneResp mid <- client (Proxy :: Proxy CreateMilestoneAPI) (Just tok) prj cm sudo
     return mid
 
@@ -356,12 +358,13 @@ instance FromJSON CreateIssueLinkResp where
     parseJSON = withObject "create issueLink response" $ \o -> do
         CreateIssueLinkResp <$> o .: "id"
 
-createIssueLink :: AccessToken -> Maybe UserId
+createIssueLink :: Logger
+                -> AccessToken -> Maybe UserId
                 -> ProjectId -> IssueIid
                 -> CreateIssueLink
                 -> ClientM IssueLinkId
-createIssueLink tok sudo prj iid cm = do
-    liftIO $ putStrLn $ "Create issueLink: " ++ show cm
+createIssueLink logger tok sudo prj iid cm = do
+    liftIO $ writeLog logger "CREATE-ISSUE-LINK" $ show cm
     CreateIssueLinkResp mid <- client (Proxy :: Proxy CreateIssueLinkAPI) (Just tok) prj iid cm sudo
     return mid
 
@@ -415,13 +418,14 @@ instance FromJSON SubscribeIssueResp where
     parseJSON = withObject "subscribe response" $ \o -> do
         pure SubscribeIssueResp
 
-subscribeIssue :: AccessToken
-                -> Maybe UserId
-                -> ProjectId
-                -> IssueIid
-                -> ClientM ()
-subscribeIssue tok sudo prj iid = do
-    liftIO $ putStrLn $ "Subscribe to issue: " ++ show iid
+subscribeIssue :: Logger
+               -> AccessToken
+               -> Maybe UserId
+               -> ProjectId
+               -> IssueIid
+               -> ClientM ()
+subscribeIssue logger tok sudo prj iid = do
+    liftIO $ writeLog logger "SUBSCRIBE-ISSUE" $ show iid
     SubscribeIssueResp <- client (Proxy :: Proxy SubscribeIssueAPI) (Just tok) prj iid SubscribeIssue sudo
     return ()
 

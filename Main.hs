@@ -91,8 +91,8 @@ openStateFile stateFile = do
         finishItem = hPutStrLn stateFile . show
     return (finished, finishItem)
 
-openCommentCacheFile :: FilePath -> IO (CommentCacheVar, StoreComment)
-openCommentCacheFile stateFile = do
+openCommentCacheFile :: Logger -> FilePath -> IO (CommentCacheVar, StoreComment)
+openCommentCacheFile logger stateFile = do
     stateFileExists <- doesFileExist stateFile
     !cacheEntries <-
         if stateFileExists
@@ -101,7 +101,7 @@ openCommentCacheFile stateFile = do
 
     let storeItem :: Int -> CommentRef -> IO ()
         storeItem t mn = do
-          traceM $ "Store comment ref: " ++ show t ++ " / " ++ show mn
+          writeLog logger "TRACE" $ "Store comment ref: " ++ show t ++ " / " ++ show mn
           stateFile <- openFile stateFile AppendMode
           hSetBuffering stateFile LineBuffering
           hPutStrLn stateFile $! showEntry (t, mn)
@@ -187,7 +187,7 @@ main = do
 
     (finishedMutations, finishMutation) <- openStateFile mutationStateFile
 
-    (commentCache, storeComment) <- openCommentCacheFile commentCacheFile
+    (commentCache, storeComment) <- openCommentCacheFile logger commentCacheFile
 
     if testParserMode
       then do
@@ -426,7 +426,7 @@ makeMilestones logger actuallyMakeThem conn = do
     createMilestone' :: Trac.Milestone -> ClientM MilestoneMap
     createMilestone' Trac.Milestone{..} =
       handleAll onError $ flip catchError onError $ do
-        mid <- createMilestone gitlabToken Nothing project
+        mid <- createMilestone logger gitlabToken Nothing project
             $ CreateMilestone { cmTitle = mName
                               , cmDescription = mDescription
                               , cmDueDate = mDue
@@ -896,6 +896,7 @@ createTicketChanges logger' milestoneMap getUserId commentCache storeComment iid
         let otherIid = IssueIid . fromIntegral $ n
         writeLog logger "LINK-ISSUES" $ show iid ++ " <-> " ++ show otherIid
         linkResult <- createIssueLink
+          logger'
           gitlabToken
           (Just authorUid)
           project
@@ -919,6 +920,7 @@ createTicketChanges logger' milestoneMap getUserId commentCache storeComment iid
                 Nothing -> error $ "User not found: " ++ show subscribeUsername
           )
         result <- subscribeIssue
+                    logger'
                     gitlabToken
                     (Just uid)
                     project
@@ -969,7 +971,7 @@ createTicketChanges logger' milestoneMap getUserId commentCache storeComment iid
               then
                 return Nothing
               else do
-                traceM $ "Issue edit: " ++ show edit
+                writeLog logger "TRACE" $ "Issue edit: " ++ show edit
                 void $ editIssue gitlabToken (Just authorUid) project iid edit
                 meid <- fmap inrId <$> getNewestIssueNote gitlabToken (Just authorUid) project iid
                 writeLog logger "CREATE-ISSUE-EDIT" $ show meid
@@ -1187,13 +1189,10 @@ prioToWeight PrioNormal  = Weight 5
 prioToWeight PrioHigh    = Weight 7
 prioToWeight PrioHighest = Weight 10
 
-traceTee x = trace x x
-traceTeeShow x = trace (show x) x
-
 extractCommitHash :: Text -> Maybe (CommitHash, Maybe RepoName)
 extractCommitHash t = do
   eparsed <- either (const Nothing) Just $ Trac.parseTrac Nothing (T.unpack t)
-  listToMaybe $ Trac.walk (traceTeeShow . extractFromInline . traceTeeShow) eparsed
+  listToMaybe $ Trac.walk extractFromInline eparsed
   where
     extractFromInline :: Trac.Inline -> Maybe (CommitHash, Maybe RepoName)
     extractFromInline (Trac.GitCommitLink hash mrepo _) =
