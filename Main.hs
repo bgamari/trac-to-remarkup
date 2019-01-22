@@ -192,6 +192,7 @@ main = do
         wpBody <- getContents
         mdBody <- printParseError logger (T.pack wpBody) $
                     Trac.Convert.convert
+                      logger
                       (showBaseUrl gitlabBaseUrl)
                       gitlabOrganisation
                       gitlabProjectName
@@ -203,7 +204,7 @@ main = do
       else if testScraperMode
         then forM_ scrapeUrls $ \url -> do
           Scraper.httpGet logger url
-            >>= Scraper.convert
+            >>= Scraper.scrape
                   logger
                   (showBaseUrl gitlabBaseUrl)
                   gitlabOrganisation
@@ -525,7 +526,7 @@ makeMutations logger' conn milestoneMap getUserId commentCache finishMutation st
           -- Create a new ticket
           Trac.CreateTicket -> do
             ticket <- liftIO $ fromMaybe (error "Ticket not found") <$> Trac.getTicket (ticketMutationTicket m) conn
-            iid@(IssueIid issueID) <- createTicket milestoneMap getUserId commentCache ticket
+            iid@(IssueIid issueID) <- createTicket logger' milestoneMap getUserId commentCache ticket
             if ((fromIntegral . getTicketNumber . ticketNumber $ ticket) == issueID)
               then
                 (liftIO $ finishMutation m)
@@ -539,7 +540,7 @@ makeMutations logger' conn milestoneMap getUserId commentCache finishMutation st
             let iid = IssueIid (fromIntegral . getTicketNumber . ticketMutationTicket $ m)
 
             createTicketChanges
-                logger
+                logger'
                 milestoneMap
                 getUserId
                 commentCache
@@ -560,9 +561,10 @@ collapseChanges tcs = TicketChange
     , changeComment = listToMaybe $ catMaybes $ map changeComment tcs
     }
 
-tracToMarkdown :: CommentCacheVar -> TicketNumber -> Text -> IO Text
-tracToMarkdown commentCache (TicketNumber n) src =
+tracToMarkdown :: Logger -> CommentCacheVar -> TicketNumber -> Text -> IO Text
+tracToMarkdown logger commentCache (TicketNumber n) src =
       T.pack <$> Trac.Convert.convertIgnoreErrors
+        logger
         (showBaseUrl gitlabBaseUrl)
         gitlabOrganisation
         gitlabProjectName
@@ -577,16 +579,17 @@ tracToMarkdown commentCache (TicketNumber n) src =
 nthMay :: Int -> [a] -> Maybe a
 nthMay n = listToMaybe . drop n
 
-createTicket :: MilestoneMap
+createTicket :: Logger
+             -> MilestoneMap
              -> UserIdOracle
              -> CommentCacheVar
              -> Ticket
              -> ClientM IssueIid
-createTicket milestoneMap getUserId commentCache t = do
+createTicket logger' milestoneMap getUserId commentCache t = do
     liftIO $ print $ ticketNumber t
     creatorUid <- getUserId $ ticketCreator t
     descriptionBody <- liftIO $
-          tracToMarkdown commentCache (ticketNumber t) $
+          tracToMarkdown logger' commentCache (ticketNumber t) $
           runIdentity $
           ticketDescription (ticketFields t)
     let extraRows = [] -- [ ("Reporter", ticketCreator t) ]
@@ -676,7 +679,7 @@ buildWiki logger fast commentCache conn = do
           mbody <- dealWithHttpError logger 0 .  withTimeout 10000 $ do
                       hbody <- Scraper.httpGet logger url
                       printScraperError logger $
-                        Scraper.convert
+                        Scraper.scrape
                           logger
                           (showBaseUrl gitlabBaseUrl)
                           gitlabOrganisation
@@ -820,7 +823,7 @@ withFieldDiff (Update old new) handler =
     else
       return Nothing
  
-createTicketChanges :: LoggerM ClientM
+createTicketChanges :: Logger
                     -> MilestoneMap
                     -> UserIdOracle
                     -> CommentCacheVar
@@ -828,7 +831,8 @@ createTicketChanges :: LoggerM ClientM
                     -> IssueIid
                     -> TicketChange
                     -> ClientM ()
-createTicketChanges logger milestoneMap getUserId commentCache storeComment iid tc = do
+createTicketChanges logger' milestoneMap getUserId commentCache storeComment iid tc = do
+    let logger = liftLogger logger'
     liftIO $ print tc
     authorUid <- getUserId $ changeAuthor tc
     let t = case iid of IssueIid n -> TicketNumber $ fromIntegral n
@@ -849,7 +853,7 @@ createTicketChanges logger milestoneMap getUserId commentCache storeComment iid 
     mrawBody <- liftIO $
                   maybe
                       (return Nothing)
-                      (fmap Just . tracToMarkdown commentCache t)
+                      (fmap Just . tracToMarkdown logger' commentCache t)
                       (changeComment tc)
     let body = T.unlines . catMaybes $
             [ mrawBody >>= justWhen (not . isCommitComment $ tc)
@@ -929,7 +933,7 @@ createTicketChanges logger milestoneMap getUserId commentCache storeComment iid 
     description <-
           liftIO $
           maybe (return Nothing)
-                (fmap Just . tracToMarkdown commentCache t)
+                (fmap Just . tracToMarkdown logger' commentCache t)
                 (ticketDescription fields)
 
     ownerUid <- maybe

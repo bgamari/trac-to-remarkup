@@ -19,7 +19,7 @@ import Control.Monad.Reader
 
 data LoggerM (m :: * -> *)
   = Logger
-      { writeLogRaw :: String -> m ()
+      { writeLogRaw :: [String] -> m ()
       , getContext :: m [String]
       , pushContext :: String -> m ()
       , popContext :: m (Maybe String)
@@ -49,7 +49,7 @@ writeLog logger prefix' msg = do
                   prefix ++ " [-] "
                 else
                   prefix ++ " [" ++ intercalate ":" (reverse ctx) ++ "] "
-      rawMsg = unlines . map (prepend ++) . lines $ msg
+      rawMsg = map (prepend ++) . lines $ msg
   writeLogRaw logger rawMsg
 
 writeLogM :: (MonadBaseControl IO m, MonadReader Logger m)
@@ -93,5 +93,5 @@ makeStdoutLogger = do
         putMVar contextVar (drop 1 cs)
         pure $ listToMaybe cs
   fork . forever $ do
-    readChan logChan >>= liftBase . putStrLn
+    readChan logChan >>= liftBase . mapM putStrLn
   return (Logger {..} :: LoggerM m)

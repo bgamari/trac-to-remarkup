@@ -31,6 +31,9 @@ data Inline = Bold Inlines
              | Italic Inlines
              | Monospaced (Maybe String) String
              | Deleted Inlines
+             | Superscript Inlines
+             | Subscript Inlines
+             | Small Inlines
              | Underlined Inlines
              | Highlighted Inlines
              | ObjectLink Ref
@@ -229,6 +232,9 @@ inline (Monospaced _ is) = return $ inside (text "`") (text "`") (text is)
 inline (Deleted is) = inside (text "~~") (text "~~") <$> inlines is
 inline (Underlined is) = inside (text "__") (text "__") <$> inlines is
 inline (Highlighted is) = inside (text "!!") (text "!!") <$> inlines is
+inline (Small is) = inside (text "<small>") (text "</small>") <$> inlines is
+inline (Superscript is) = inside (text "<sup>") (text "</sup>") <$> inlines is
+inline (Subscript is) = inside (text "<sub>") (text "</sub>") <$> inlines is
 inline (Str str) = return . text . escapeMarkdown $ str
 inline Space = return $ space
 inline (WebLink is url) = longLink url is

@@ -17,7 +17,7 @@ import Control.Applicative
 import qualified Trac.Parser as R
 import Control.Exception
 import Trac.Db.Types (CommentRef (..))
-import Trac.Convert (convertBlocks, LookupComment)
+import Trac.Convert (convertBlocks, LookupComment, runConvert)
 import Trac.Writer (writeRemarkup)
 import Data.Maybe
 import Data.Char
@@ -51,23 +51,23 @@ data ConversionError = ConversionError String
 instance Exception ConversionError where
   displayException (ConversionError err) = "Conversion error: " ++ err
 
-type Convert = ReaderT Logger IO
+type Scrape = ReaderT Logger IO
 
-runConvert :: Logger -> Convert a -> IO a
-runConvert logger action =
+runScrape :: Logger -> Scrape a -> IO a
+runScrape logger action =
   runReaderT action logger
 
-convert :: Logger -> String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> LBS.ByteString -> IO String
-convert logger base org proj mn msrcname cm s =
-  withContext logger "convert" $ do
-    blocks <- runConvert logger $
+scrape :: Logger -> String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> LBS.ByteString -> IO String
+scrape logger base org proj mn msrcname cm s =
+  withContext logger "scrape" $ do
+    blocks <- runScrape logger $
           nodeToBlocks $
           maybe (throw $ ConversionError "Main content not found") id $
           extractPayload $
           parseHtml s
 
     fmap (writeRemarkup base org proj) $
-      convertBlocks mn cm blocks
+      runConvert logger mn cm $ convertBlocks blocks
 
 parseHtml :: LBS.ByteString -> [Node]
 parseHtml =
@@ -113,7 +113,7 @@ extractPayloadFrom node@(NodeElement (Element {..}))
 -- that happens, we want to group consecutive inline elements and wrap
 -- each group in a single Para, but we need to keep existing block-level
 -- elements intact.
-nodesToBlocks :: [Node] -> Convert [R.Block]
+nodesToBlocks :: [Node] -> Scrape [R.Block]
 nodesToBlocks nodes = do
   (is, bs) <- go nodes -- =<< (zip <$> mapM nodeToInlines nodes <*> mapM nodeToBlocks nodes)
   if null is then
@@ -121,7 +121,7 @@ nodesToBlocks nodes = do
   else
     pure (R.Para is : bs)
   where
-    go :: [Node] -> Convert ([R.Inline], [R.Block])
+    go :: [Node] -> Scrape ([R.Inline], [R.Block])
     go [] = pure ([], [])
     go (n:ns) = do
       b <- nodeToBlocks n
@@ -133,7 +133,7 @@ nodesToBlocks nodes = do
       else
         pure ([], b ++ [R.Para is] ++ bs)
 
-childrenToBlocks :: Node -> Convert [R.Block]
+childrenToBlocks :: Node -> Scrape [R.Block]
 childrenToBlocks node@(NodeElement Element{..})
   = withContextM (dumpNode node) (nodesToBlocks eltChildren)
 childrenToBlocks _
@@ -141,7 +141,7 @@ childrenToBlocks _
 
 -- | Generate 'Blocks' for a 'Node'. Non-block nodes, including text content,
 -- yield an empty list.
-nodeToBlocks :: Node -> Convert [R.Block]
+nodeToBlocks :: Node -> Scrape [R.Block]
 nodeToBlocks (NodeContent str) =
   pure []
 nodeToBlocks node@(NodeElement elem) =
@@ -152,7 +152,7 @@ one = (:[])
 
 -- | Generate 'Blocks' for an 'Element'. Non-block elements yield an
 -- empty list.
-elemToBlocks :: Element -> Convert [R.Block]
+elemToBlocks :: Element -> Scrape [R.Block]
 elemToBlocks Element {..}
   ----- lists -----
   | eltName == "ul"
@@ -211,14 +211,14 @@ elemToBlocks Element {..}
   | otherwise
   = pure []
 
-nodesToDL :: [Node] -> Convert [R.Block]
+nodesToDL :: [Node] -> Scrape [R.Block]
 nodesToDL = fmap (one . R.DefnList) . nodesToDLEntries
 
-nodesToDLEntries :: [Node] -> Convert [(R.Blocks, [R.Blocks])]
+nodesToDLEntries :: [Node] -> Scrape [(R.Blocks, [R.Blocks])]
 nodesToDLEntries nodes =
   go nodes
   where
-    go :: [Node] -> Convert [(R.Blocks, [R.Blocks])]
+    go :: [Node] -> Scrape [(R.Blocks, [R.Blocks])]
     go []
       = pure []
     go (NodeContent str : xs)
@@ -247,10 +247,10 @@ isWhitespace (NodeContent str)
 isWhitespace _
   = False
 
-nodesToTable :: [Node] -> Convert [R.Block]
+nodesToTable :: [Node] -> Scrape [R.Block]
 nodesToTable = fmap (one . R.Table) . nodesToTableRows
 
-nodesToTableRows :: [Node] -> Convert [R.TableRow]
+nodesToTableRows :: [Node] -> Scrape [R.TableRow]
 nodesToTableRows (NodeElement (Element "thead" _ xs) : ns) =
   -- the Parser AST doesn't allow us to distinguish thead from tbody,
   -- so we'll just throw everything in one big table.
@@ -265,7 +265,7 @@ nodesToTableRows (x:xs)
   | otherwise
   = (:) <$> nodeToTR x <*> nodesToTableRows xs
 
-nodeToTR :: Node -> Convert R.TableRow
+nodeToTR :: Node -> Scrape R.TableRow
 nodeToTR (NodeContent str) =
   -- Nothing useful we can do here other than dump the string in a
   -- single-cell table row
@@ -276,7 +276,7 @@ nodeToTR (NodeElement Element {..})
   | otherwise
   = throw $ ConversionError $ "Expected <tr>, but found <" ++ Text.unpack eltName ++ ">"
 
-nodeToTableCell :: Node -> Convert R.TableCell
+nodeToTableCell :: Node -> Scrape R.TableCell
 nodeToTableCell (NodeElement Element {..})
   | eltName == "th"
   = R.TableHeaderCell <$> nodesToBlocks eltChildren
@@ -287,10 +287,10 @@ nodeToTableCell (NodeElement Element {..})
 nodeToTableCell (NodeContent str)
   = pure . R.TableCell . one . R.Para . one . R.Str $ Text.unpack str
 
-nodesToInlines :: [Node] -> Convert [R.Inline]
+nodesToInlines :: [Node] -> Scrape [R.Inline]
 nodesToInlines = fmap concat . mapM nodeToInlines
 
-nodeToInlines :: Node -> Convert [R.Inline]
+nodeToInlines :: Node -> Scrape [R.Inline]
 nodeToInlines node@(NodeElement {}) =
   withContextM (dumpNode node) (go node)
   where
