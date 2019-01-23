@@ -1,4 +1,4 @@
-{ nixpkgs ? import <nixpkgs> {}, compiler ? "default" }:
+{ nixpkgs ? import ./nixpkgs.nix {}, compiler ? "default" }:
 
 let
 
@@ -9,7 +9,7 @@ let
       , filepath, http-client-tls, http-types, megaparsec
       , mtl, NoTrace, postgresql-simple, pretty-show, process, servant
       , servant-client, silently, split, stdenv, stm, temporary, text
-      , time, transformers
+      , time, transformers, taggy, lifted-base
       }:
       mkDerivation {
         pname = "trac-to-remarkup";
@@ -20,7 +20,7 @@ let
         libraryHaskellDepends = [
           aeson base bytestring casing containers megaparsec mtl NoTrace
           postgresql-simple process servant servant-client split temporary
-          text time
+          text time taggy lifted-base
         ];
         executableHaskellDepends = [
           async base bytestring connection containers data-default directory
@@ -32,6 +32,7 @@ let
           base directory filepath pretty-show silently
         ];
         license = stdenv.lib.licenses.bsd3;
+        doHaddock = false; # Haddock inexplicably breaks
       };
 
 
@@ -40,13 +41,14 @@ let
       mkDerivation = xs: super.mkDerivation (xs // 
         { configureFlags = (xs.configureFlags or "") + "--ghc-options=-g --disable-executable-stripping --disable-library-stripping"; }
       );
-      hspec = self.callHackage "hspec" "2.5.9" {};
-      hspec-core = self.callHackage "hspec-core" "2.5.9" {};
-      hspec-discover = self.callHackage "hspec-discover" "2.5.9" {};
+      #hspec = self.callHackage "hspec" "2.5.9" {};
+      #hspec-core = self.callHackage "hspec-core" "2.5.9" {};
+      #hspec-discover = self.callHackage "hspec-discover" "2.5.9" {};
+      #tasty = self.callHackage "tasty" "1.2" {};
     };
   };
   haskellPackages = if compiler == "default"
-                       then pkgs.haskellPackages
+                       then withDwarf pkgs.haskellPackages
                        else withDwarf pkgs.haskell.packages.${compiler};
 
   drv = with nixpkgs.haskell.lib; haskellPackages.callPackage f {
