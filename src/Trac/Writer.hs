@@ -286,7 +286,15 @@ mkDifferentialUrl n =
     "https://phabricator.haskell.org/D" <> fromString (show n)
 
 tracWikiNameToGitlab :: String -> String
-tracWikiNameToGitlab = intercalate "/" . map (toKebab . fromHumps) . splitOn "/"
+tracWikiNameToGitlab twn
+  | '#' `elem` twn
+  = baseGWN ++ "#" ++ tailGWN
+  | otherwise
+  = baseGWN
+  where
+    (baseTWN, tailTWN) = break (== '#') twn
+    baseGWN = intercalate "/" . map (toKebab . fromHumps) . splitOn "/" $ baseTWN
+    tailGWN = toKebab . fromHumps . drop 1 $ tailTWN
 
 -- | Escape special characters for Markdown.
 -- Shamelessly ripped out of pandoc and adapted for our needs.
