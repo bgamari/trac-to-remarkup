@@ -1,5 +1,10 @@
 {-#LANGUAGE RecordWildCards #-}
 {-#LANGUAGE OverloadedStrings #-}
+{-#LANGUAGE GeneralizedNewtypeDeriving #-}
+{-#LANGUAGE StandaloneDeriving #-}
+{-#LANGUAGE MultiParamTypeClasses #-}
+{-#LANGUAGE FlexibleInstances #-}
+{-#LANGUAGE UndecidableInstances #-}
 module Trac.Scraper
 where
 
@@ -16,6 +21,7 @@ import qualified Data.HashMap.Strict as HashMap
 import Control.Applicative
 import qualified Trac.Parser as R
 import Control.Exception
+import Control.Concurrent.MVar
 import Trac.Db.Types (CommentRef (..))
 import Trac.Convert (convertBlocks, LookupComment, runConvert)
 import Trac.Writer (writeRemarkup)
@@ -27,6 +33,8 @@ import Logging
 import Text.Printf (printf)
 import Network.HTTP.Types.Status (Status (..))
 import Control.Monad.Reader
+import Control.Monad.Trans.Control
+import Control.Monad.Base
 
 httpGet :: Logger -> String -> IO LBS.ByteString
 httpGet logger url = withContext logger url $ do
@@ -45,29 +53,70 @@ httpGet logger url = withContext logger url $ do
 a <++> b = (++) <$> a <*> b
 infixr 5 <++>
 
+data ScrapeContext
+  = ScrapeContext
+      { scrapeLogger :: Logger
+      , anchorCache :: MVar (HashMap.HashMap String String)
+      }
+
 data ConversionError = ConversionError String
   deriving (Show)
 
 instance Exception ConversionError where
   displayException (ConversionError err) = "Conversion error: " ++ err
 
-type Scrape = ReaderT Logger IO
+newtype Scrape a = Scrape { unScrape :: ReaderT ScrapeContext IO a }
+  deriving ( Functor, Applicative, Monad
+           , MonadReader ScrapeContext
+           , MonadIO
+           )
 
-runScrape :: Logger -> Scrape a -> IO a
-runScrape logger action =
-  runReaderT action logger
+deriving instance MonadBase IO Scrape
+deriving instance MonadBaseControl IO Scrape
 
-scrape :: Logger -> String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> LBS.ByteString -> IO String
-scrape logger base org proj mn msrcname cm s =
+instance MonadLogger Scrape where
+  getLogger = liftLogger <$> asks scrapeLogger
+
+type AnchorMap = HashMap.HashMap String String
+
+runScrape :: AnchorMap -> Logger -> Scrape a -> IO (a, AnchorMap)
+runScrape anchorMap logger action = do
+  cacheVar <- newMVar anchorMap
+  let context = ScrapeContext logger cacheVar
+  x <- runReaderT (unScrape action) context
+  anchorMap' <- takeMVar cacheVar
+  return (x, anchorMap')
+
+scrape :: AnchorMap -> Logger -> String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> LBS.ByteString -> IO (String, AnchorMap)
+scrape anchorMap logger base org proj mn msrcname cm s =
   withContext logger "scrape" $ do
-    blocks <- runScrape logger $
+    (blocks, anchorMap') <- runScrape anchorMap logger $
           nodeToBlocks $
           maybe (throw $ ConversionError "Main content not found") id $
           extractPayload $
           parseHtml s
 
-    fmap (writeRemarkup base org proj) $
-      runConvert logger mn cm $ convertBlocks blocks
+    let an raw = HashMap.lookup raw anchorMap'
+
+    out <- fmap (writeRemarkup base org proj) $
+      runConvert logger mn cm an $ convertBlocks blocks
+
+    return (out, anchorMap')
+
+storeAnchor :: String -> Scrape ()
+storeAnchor orig = do
+  let mangled = mangleAnchor orig
+  cache <- asks anchorCache
+  writeLogM "ANCHOR-STORE" $ printf "%s = %s" (show mangled) (show orig)
+  liftIO $ modifyMVar_ cache $ pure . HashMap.insert mangled orig
+
+findAnchor :: String -> Scrape (Maybe String)
+findAnchor mangled = do
+  cache <- asks anchorCache
+  liftIO $ HashMap.lookup mangled <$> readMVar cache
+
+mangleAnchor :: String -> String
+mangleAnchor = filter isAlphaNum
 
 parseHtml :: LBS.ByteString -> [Node]
 parseHtml =
@@ -175,17 +224,18 @@ elemToBlocks Element {..}
 
   ----- headings -----
   | eltName == "h1"
-  = fmap one $ R.Header 1 <$> nodesToInlines eltChildren <*> pure []
+  = mkHeading 1 eltChildren
   | eltName == "h2"
-  = fmap one $ R.Header 2 <$> nodesToInlines eltChildren <*> pure []
+  = mkHeading 2 eltChildren
   | eltName == "h3"
-  = fmap one $ R.Header 3 <$> nodesToInlines eltChildren <*> pure []
+  = mkHeading 3 eltChildren
   | eltName == "h4"
-  = fmap one $ R.Header 4 <$> nodesToInlines eltChildren <*> pure []
+  = mkHeading 4 eltChildren
   | eltName == "h5"
-  = fmap one $ R.Header 5 <$> nodesToInlines eltChildren <*> pure []
+  = mkHeading 5 eltChildren
   | eltName == "h6"
-  = fmap one $ R.Header 6 <$> nodesToInlines eltChildren <*> pure []
+  = mkHeading 6 eltChildren
+
   | eltName == "blockquote"
   = one . R.Discussion <$> nodesToBlocks eltChildren
 
@@ -210,6 +260,12 @@ elemToBlocks Element {..}
 
   | otherwise
   = pure []
+
+mkHeading :: Int -> [Node] -> Scrape R.Blocks
+mkHeading level children = do
+  let headingText = Text.unpack . Text.unwords $ map textContent children
+  storeAnchor headingText
+  fmap one $ R.Header level <$> nodesToInlines children <*> pure []
 
 nodesToDL :: [Node] -> Scrape [R.Block]
 nodesToDL = fmap (one . R.DefnList) . nodesToDLEntries

@@ -9,8 +9,6 @@ import Trac.Pretty
 import qualified Data.Map as M
 import Control.Monad.Reader
 import Data.Maybe (fromMaybe)
-import Text.Casing
-import Data.List.Split
 import Data.Char (isAlphaNum)
 
 type CommentMap = M.Map (Int, Int) Int
@@ -284,17 +282,6 @@ mkDifferentialLink n =
 mkDifferentialUrl :: (Semigroup t, IsString t) => Int -> t
 mkDifferentialUrl n =
     "https://phabricator.haskell.org/D" <> fromString (show n)
-
-tracWikiNameToGitlab :: String -> String
-tracWikiNameToGitlab twn
-  | '#' `elem` twn
-  = baseGWN ++ "#" ++ tailGWN
-  | otherwise
-  = baseGWN
-  where
-    (baseTWN, tailTWN) = break (== '#') twn
-    baseGWN = intercalate "/" . map (toKebab . fromHumps) . splitOn "/" $ baseTWN
-    tailGWN = toKebab . fromHumps . drop 1 $ tailTWN
 
 -- | Escape special characters for Markdown.
 -- Shamelessly ripped out of pandoc and adapted for our needs.

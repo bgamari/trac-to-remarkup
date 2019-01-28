@@ -32,10 +32,10 @@ type Logger = LoggerM IO
 class Monad m => MonadLogger m where
   getLogger :: m (LoggerM m)
 
-instance (MonadBase b m, MonadBaseControl b m) => MonadLogger (ReaderT (LoggerM b) m) where
+instance (MonadBase b m) => MonadLogger (ReaderT (LoggerM b) m) where
   getLogger = liftLogger <$> ask
 
-liftLogger :: (MonadBase b m, MonadBaseControl b m) => LoggerM b -> LoggerM m
+liftLogger :: (MonadBase b m) => LoggerM b -> LoggerM m
 liftLogger (Logger w g s p)
   = Logger
       (liftBase . w)
