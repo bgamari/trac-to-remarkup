@@ -1140,7 +1140,7 @@ typeOfFailureLabels t =
 
 fieldLabels :: Fields Maybe -> Labels
 fieldLabels fields =
-    "TracImport" <> keywordLbls <> failureLbls
+    "TracImport" <> keywordLbls <> failureLbls <> typeLbls
   where
     keywordLbls = mconcat
         [ lbl
@@ -1148,6 +1148,14 @@ fieldLabels fields =
         , kw <- toList keywords
         , Just lbl <- pure $ M.lookup kw keywordLabels
         ]
+
+    typeLbls :: Labels
+    typeLbls =
+        case ticketType fields of
+          Just Bug -> "bug"
+          Just Task -> "task"
+          Just FeatureRequest -> "feature request"
+          Nothing -> mempty
 
     failureLbls :: Labels
     failureLbls = maybe mempty typeOfFailureLabels $ ticketTypeOfFailure fields
