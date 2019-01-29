@@ -885,56 +885,6 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
         Nothing -> return 1
         Just xs -> return (length xs + 1)
 
-    -- Compose a note body. In some cases, we don't want to create a note,
-    -- because the information we could put in there isn't useful, or because
-    -- we already store it elsewhere. In those cases, we leave the body empty,
-    -- and check for that later.
-    mrawBody <- liftIO $
-                  maybe
-                      (return Nothing)
-                      (fmap Just . tracToMarkdown logger' commentCache t)
-                      (changeComment tc)
-    let body = T.unlines . catMaybes $
-            [ mrawBody >>= justWhen (not . isCommitComment $ tc)
-            , unlessNull $
-                fieldsTable
-                  mempty
-                  -- [ ("User", changeAuthor tc) -- ]
-                  (changeFields tc)
-            , Just ""
-            , Just $ fieldsJSON (changeFields tc)
-            ]
-    writeLog logger "NOTE" $ show body
-    let discard = T.all isSpace body
-    mcinId <- if discard
-                  then do
-                    writeLog logger "COMMENT-SKIPPED" ""
-                    return Nothing
-                  else do
-                    let note = CreateIssueNote { cinBody = body
-                                               , cinCreatedAt = Just $ changeTime tc
-                                               }
-                    cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
-                    writeLog logger "NOTE-CREATED" $ show commentNumber ++ " -> " ++ show cinResp
-                    return (Just . NoteRef . inrId $ cinResp)
-
-    -- Translate issue link lists to link/unlink events.
-    withFieldDiff (ticketRelated $ changeFields tc) $ \toLink toUnlink -> do
-      forM_ toLink $ \(TicketNumber n) -> do
-        let otherIid = IssueIid . fromIntegral $ n
-        writeLog logger "LINK-ISSUES" $ show iid ++ " <-> " ++ show otherIid
-        linkResult <- createIssueLink
-          logger'
-          gitlabToken
-          (Just authorUid)
-          project
-          iid
-          (CreateIssueLink project iid project otherIid)
-        writeLog logger "LINKED" $ show linkResult
-
-      writeLog logger "LINK" (show toLink)
-      writeLog logger "UNLINK" (show toUnlink)
-
     -- Translate CC field changes to subscribe/unsubscribe events.
     let handleSubscriptions :: S.Set Username -> S.Set Username -> ClientM (Fields Update)
         handleSubscriptions toSubscribe toUnsubscribe = do
@@ -970,10 +920,62 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
           let oldCC = ticketCC (changeFields tc)
               -- Remove the changes we've made via subscription to avoid producing
               -- unnecessary metadata tables
-              newCC = oldCC { newValue = fmap (\s -> s `S.difference` M.keysSet toSubscribe' `S.union` M.keysSet toUnsubscribe') (newValue oldCC) }
+              newCC = oldCC { newValue = fmap (\s -> (s `S.union` M.keysSet toSubscribe') `S.difference` M.keysSet toUnsubscribe') (newValue oldCC) }
           return $ (changeFields tc) { ticketCC = newCC }
 
-    fields' <- fromMaybe (changeFields tc) <$> withFieldDiff (ticketCC $ changeFields tc) handleSubscriptions
+    fields' <- fromMaybe (changeFields tc)
+               <$> withFieldDiff (ticketCC $ changeFields tc) handleSubscriptions
+
+
+    -- Compose a note body. In some cases, we don't want to create a note,
+    -- because the information we could put in there isn't useful, or because
+    -- we already store it elsewhere. In those cases, we leave the body empty,
+    -- and check for that later.
+    mrawBody <- liftIO $
+                  maybe
+                      (return Nothing)
+                      (fmap Just . tracToMarkdown logger' commentCache t)
+                      (changeComment tc)
+    let body = T.unlines . catMaybes $
+            [ mrawBody >>= justWhen (not . isCommitComment $ tc)
+            , unlessNull $
+                fieldsTable
+                  mempty
+                  -- [ ("User", changeAuthor tc) -- ]
+                  fields'
+            , Just ""
+            , Just $ fieldsJSON (changeFields tc)
+            ]
+    writeLog logger "NOTE" $ show body
+    let discard = T.all isSpace body
+    mcinId <- if discard
+                  then do
+                    writeLog logger "COMMENT-SKIPPED" ""
+                    return Nothing
+                  else do
+                    let note = CreateIssueNote { cinBody = body
+                                               , cinCreatedAt = Just $ changeTime tc
+                                               }
+                    cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
+                    writeLog logger "NOTE-CREATED" $ show commentNumber ++ " -> " ++ show cinResp
+                    return (Just . NoteRef . inrId $ cinResp)
+
+    -- Translate issue link lists to link/unlink events.
+    withFieldDiff (ticketRelated $ changeFields tc) $ \toLink toUnlink -> do
+      forM_ toLink $ \(TicketNumber n) -> do
+        let otherIid = IssueIid . fromIntegral $ n
+        writeLog logger "LINK-ISSUES" $ show iid ++ " <-> " ++ show otherIid
+        linkResult <- createIssueLink
+          logger'
+          gitlabToken
+          (Just authorUid)
+          project
+          iid
+          (CreateIssueLink project iid project otherIid)
+        writeLog logger "LINKED" $ show linkResult
+
+      writeLog logger "LINK" (show toLink)
+      writeLog logger "UNLINK" (show toUnlink)
 
     -- Field updates. Figure out which fields to update.
     let fields = hoistFields newValue fields'
