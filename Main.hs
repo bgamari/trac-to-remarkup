@@ -954,8 +954,16 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                     project
                     iid
         writeLog logger "SUBSCRIBED" $ show result
-      writeLog logger "SUBSCRIBE" $ (show toSubscribe)
-      writeLog logger "UNSUBSCRIBE" $ (show toUnsubscribe)
+
+      forM_ toUnsubscribe' $ \uid -> do
+        writeLog logger "UNSUBSCRIBE-USER" $ show uid
+        result <- unsubscribeIssue
+                    logger'
+                    gitlabToken
+                    (Just uid)
+                    project
+                    iid
+        writeLog logger "UNSUBSCRIBED" $ show result
 
     -- Field updates. Figure out which fields to update.
     let fields = hoistFields newValue $ changeFields tc

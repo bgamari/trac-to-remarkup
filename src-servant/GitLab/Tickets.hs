@@ -429,3 +429,40 @@ subscribeIssue logger tok sudo prj iid = do
     SubscribeIssueResp <- client (Proxy :: Proxy SubscribeIssueAPI) (Just tok) prj iid SubscribeIssue sudo
     return ()
 
+
+----------------------------------------------------------------------
+-- unsubscribeIssue
+----------------------------------------------------------------------
+
+type UnsubscribeIssueAPI =
+    GitLabRoot :> "projects"
+    :> Capture "id" ProjectId :> "issues"
+    :> Capture "issue_iid" IssueIid :> "ununsubscribe"
+    :> ReqBody '[JSON] UnsubscribeIssue
+    :> SudoParam
+    :> Post '[JSON] UnsubscribeIssueResp
+
+data UnsubscribeIssue
+    = UnsubscribeIssue
+        deriving (Show)
+
+instance ToJSON UnsubscribeIssue where
+    toJSON UnsubscribeIssue = object
+        []
+
+data UnsubscribeIssueResp = UnsubscribeIssueResp
+
+instance FromJSON UnsubscribeIssueResp where
+    parseJSON = withObject "unsubscribe response" $ \o -> do
+        pure UnsubscribeIssueResp
+
+unsubscribeIssue :: Logger
+               -> AccessToken
+               -> Maybe UserId
+               -> ProjectId
+               -> IssueIid
+               -> ClientM ()
+unsubscribeIssue logger tok sudo prj iid = do
+    liftIO $ writeLog logger "UNSUBSCRIBE-ISSUE" $ show iid
+    UnsubscribeIssueResp <- client (Proxy :: Proxy UnsubscribeIssueAPI) (Just tok) prj iid UnsubscribeIssue sudo
+    return ()
