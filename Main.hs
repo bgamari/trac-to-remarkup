@@ -67,8 +67,8 @@ import GitLab.Users
 import qualified Trac.Web
 import Trac.Db as Trac
 import Trac.Db.Types as Trac
-import Trac.Convert (LookupComment)
-import Trac.Writer (mkDifferentialLink, tracWikiNameToGitlab)
+import Trac.Convert (LookupComment, tracWikiBaseNameToGitlab)
+import Trac.Writer (mkDifferentialLink)
 import qualified Trac.Convert
 import qualified Trac.Parser as Trac
 import qualified Trac.Scraper as Scraper
@@ -201,20 +201,23 @@ main = do
                       Nothing
                       (Just "stdin")
                       dummyGetCommentId
+                      dummyLookupAnchor
                       wpBody
         putStr mdBody
       else if testScraperMode
         then forM_ scrapeUrls $ \url -> do
-          Scraper.httpGet logger url
-            >>= Scraper.scrape
-                  logger
-                  (showBaseUrl gitlabBaseUrl)
-                  gitlabOrganisation
-                  gitlabProjectName
-                  Nothing
-                  (Just "stdin")
-                  dummyGetCommentId
-            >>= putStrLn
+          src <- Scraper.httpGet logger url
+          (dst, amap) <- Scraper.scrape
+            mempty
+            logger
+            (showBaseUrl gitlabBaseUrl)
+            gitlabOrganisation
+            gitlabProjectName
+            Nothing
+            (Just "stdin")
+            dummyGetCommentId
+            src
+          putStrLn dst
           
       else do
         milestoneMap <- either (error . show) id <$> runClientM (makeMilestones logger (not skipMilestones) conn) env
@@ -260,6 +263,9 @@ main = do
 
 dummyGetCommentId :: Int -> Int -> IO CommentRef
 dummyGetCommentId t c = pure MissingCommentRef
+
+dummyLookupAnchor :: String -> Maybe String
+dummyLookupAnchor = Just
 
 divide :: Int -> [a] -> [[a]]
 divide n xs = map f [0..n-1]
@@ -573,6 +579,7 @@ tracToMarkdown logger commentCache (TicketNumber n) src =
         (Just $ fromIntegral n)
         Nothing
         getCommentId
+        dummyLookupAnchor
         (T.unpack src)
       where
         getCommentId :: Int -> Int -> IO CommentRef
@@ -654,7 +661,8 @@ buildWiki logger fast keepGit commentCache conn = do
     $ \wc -> do
       liftIO $ writeLog logger "WIKI BUILD DIR" wc
       pages <- liftIO $ (if fast then getWikiPagesFast else getWikiPages) conn
-      forM_ pages (buildPage wc)
+      anchorMapVar <- liftIO $ newMVar mempty
+      forM_ pages (buildPage anchorMapVar wc)
       liftIO $ do
         (git_ logger wc "pull" [] >>= writeLog logger "GIT")
               `catch`
@@ -674,13 +682,13 @@ buildWiki logger fast keepGit commentCache conn = do
     getCommentId :: Int -> Int -> IO CommentRef
     getCommentId t c = fromMaybe MissingCommentRef . (>>= nthMay (c - 1)) . M.lookup t <$> readMVar commentCache
 
-    buildPage :: Git.WorkingCopy -> WikiPage -> ClientM ()
-    buildPage wc WikiPage{..} =
+    buildPage :: MVar Scraper.AnchorMap -> Git.WorkingCopy -> WikiPage -> ClientM ()
+    buildPage anchorMapVar wc WikiPage{..} =
       Logging.withContext (liftLogger logger) (T.unpack wpName) $ do
         liftIO $ do
           writeLog logger "INFO" $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
           hFlush stdout
-        let baseFilename = wc </> (tracWikiNameToGitlab . T.unpack $ wpName)
+        let baseFilename = wc </> (tracWikiBaseNameToGitlab . T.unpack $ wpName)
             filename = baseFilename <.> "md"
             tracFilename = baseFilename <.> "trac"
         liftIO $ do
@@ -691,27 +699,23 @@ buildWiki logger fast keepGit commentCache conn = do
                   wpVersion
 
           mbody <- dealWithHttpError logger 0 .  withTimeout 10000 $ do
-                      hbody <- Scraper.httpGet logger url
-                      printScraperError logger $
-                        Scraper.scrape
-                          logger
-                          (showBaseUrl gitlabBaseUrl)
-                          gitlabOrganisation
-                          gitlabProjectName
-                          Nothing
-                          (Just filename)
-                          getCommentId
-                          hbody
-                        -- printParseError wpBody $
-                        --   Trac.Convert.convert
-                        --     (showBaseUrl gitlabBaseUrl)
-                        --     gitlabOrganisation
-                        --     gitlabProjectName
-                        --     Nothing
-                        --     (Just filename)
-                        --     getCommentId
-                        --     -- dummyGetCommentId
-                        --     (T.unpack . T.dropWhile isSpace $ wpBody)
+                      src <- Scraper.httpGet logger url
+                      anchorMap <- takeMVar anchorMapVar
+                      (dst, manchorMap') <-
+                        printScraperError logger $
+                          Scraper.scrape
+                            anchorMap
+                            logger
+                            (showBaseUrl gitlabBaseUrl)
+                            gitlabOrganisation
+                            gitlabProjectName
+                            Nothing
+                            (Just filename)
+                            getCommentId
+                            src
+                      let anchorMap' = fromMaybe anchorMap manchorMap'
+                      putMVar anchorMapVar anchorMap'
+                      return dst
           writeLog logger "INFO" $ printf "Create file %s in directory %s\n"
             (show filename)
             (show $ takeDirectory filename)
@@ -755,14 +759,21 @@ printGitError logger action = action `catch` h
     h err = do
       writeLog logger "GIT-EXCEPTION" $ displayException err
 
-printScraperError :: Logger -> IO String -> IO String
-printScraperError logger action = action `catch` h
+printScraperError :: forall a. Logger -> IO (String, a) -> IO (String, Maybe a)
+printScraperError logger action = action' `catch` h
   where
-    h :: Scraper.ConversionError -> IO String
+    action' :: IO (String, Maybe a)
+    action' = do
+      (x, a) <- action
+      return (x, Just a)
+
+    h :: Scraper.ConversionError -> IO (String, Maybe a)
     h err@(Scraper.ConversionError msg) = do
       writeLog logger "SCRAPER-EXCEPTION" $ displayException err
-      return $ printf "Conversion error:\n\n```\n%s\n```\n\n"
-        msg
+      return
+        ( printf "Conversion error:\n\n```\n%s\n```\n\n" msg
+        , Nothing
+        )
 
 printParseError :: Logger -> Text -> IO String -> IO String
 printParseError logger body action = action `catch` h

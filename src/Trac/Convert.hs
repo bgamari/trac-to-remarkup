@@ -2,7 +2,13 @@
 {-#LANGUAGE FlexibleInstances #-}
 {-#LANGUAGE FlexibleContexts #-}
 
-module Trac.Convert (convert, convertIgnoreErrors, convertBlocks, CommentMap, LookupComment, runConvert) where
+module Trac.Convert
+  ( convert, convertIgnoreErrors, convertBlocks
+  , CommentMap, LookupComment
+  , runConvert
+  , tracWikiNameToGitlab, tracWikiBaseNameToGitlab
+  )
+where
 
 import qualified Trac.Parser as R
 import Trac.Writer
@@ -18,14 +24,19 @@ import Data.Void
 import Text.Printf
 import Logging
 import Control.Monad.Reader
+import Text.Casing
+import Data.List.Split
 
 type LookupComment = Int -> Int -> IO CommentRef
+
+type LookupAnchor = String -> Maybe String
 
 data ConvertContext
   = ConvertContext
       { logger :: Logger
       , mTicketNumber :: Maybe Int
       , lookupComment :: LookupComment
+      , lookupAnchor :: LookupAnchor
       }
 
 type Convert = ReaderT ConvertContext IO
@@ -33,9 +44,9 @@ type Convert = ReaderT ConvertContext IO
 instance MonadLogger (ReaderT ConvertContext IO) where
   getLogger = liftLogger <$> asks logger
 
-runConvert :: Logger -> Maybe Int -> LookupComment -> Convert a -> IO a
-runConvert logger mn cm action =
-  runReaderT action (ConvertContext logger mn cm)
+runConvert :: Logger -> Maybe Int -> LookupComment -> LookupAnchor -> Convert a -> IO a
+runConvert logger mn cm an action =
+  runReaderT action (ConvertContext logger mn cm an)
 
 convert :: Logger
         -> String
@@ -44,19 +55,29 @@ convert :: Logger
         -> Maybe Int
         -> Maybe String
         -> LookupComment
+        -> LookupAnchor
         -> String
         -> IO String
-convert logger base org proj mn msrcname cm s =
+convert logger base org proj mn msrcname cm an s =
     fmap (writeRemarkup base org proj)
-    $ runConvert logger mn cm
+    $ runConvert logger mn cm an
     $ convertBlocks
     $ either throw id
     $ R.parseTrac (msrcname <|> (("ticket:" ++) . show <$> mn))
     $ s
 
-convertIgnoreErrors :: Logger -> String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> String -> IO String
-convertIgnoreErrors logger base org proj mn msrcname cm s =
-  convert logger base org proj mn msrcname cm s
+convertIgnoreErrors :: Logger
+                    -> String
+                    -> String
+                    -> String
+                    -> Maybe Int
+                    -> Maybe String
+                    -> LookupComment
+                    -> LookupAnchor
+                    -> String
+                    -> IO String
+convertIgnoreErrors logger base org proj mn msrcname cm an s =
+  convert logger base org proj mn msrcname cm an s
     `catches`
       [ Handler handleParseError
       , Handler handleOtherError
@@ -73,7 +94,7 @@ convertIgnoreErrors logger base org proj mn msrcname cm s =
     handleParseError err = do
       writeLog logger "PARSER-ERROR" $ parseErrorPretty err
       fmap (writeRemarkup base org proj) $
-        runConvert logger mn cm $
+        runConvert logger mn cm an $
           convertBlocks
             [R.Header 1
               [R.Str "PARSER ERROR:"]
@@ -154,8 +175,8 @@ convertInline (R.WikiStyle is) = Italic <$> convertInlines is
 convertInline (R.Link url []) = pure $ WebLink (intersperse Space [Str url]) url
 convertInline (R.Link url is) = pure $ WebLink (intersperse Space (map Str is)) url
 convertInline (R.WikiLink wikiname mlabel) = do
-  let url = tracWikiNameToGitlab wikiname
-      label = map Str $ fromMaybe [wikiname] mlabel
+  url <- tracWikiNameToGitlab wikiname
+  let label = map Str $ fromMaybe [wikiname] mlabel
   pure $ WikiLink label url
 convertInline (R.GitCommitLink hash mrepo []) = pure $ GitCommitLink (intersperse Space (prettyCommit hash mrepo)) hash mrepo
 convertInline (R.GitCommitLink hash mrepo is) = pure $ GitCommitLink (intersperse Space (map Str is)) hash mrepo
@@ -199,3 +220,20 @@ convertInline (R.Strikethrough is) = Deleted <$> convertInlines is
 convertInline e = do
   writeLogM "CONVERT-WARNING" $ "not handled: " ++ show e
   pure $ Str $ "not handled: "  ++ show e
+
+tracWikiNameToGitlab :: String -> Convert String
+tracWikiNameToGitlab twn
+  | '#' `elem` twn
+  = do
+      getAnchor <- asks lookupAnchor
+      let tailSWN = fromMaybe "" $ getAnchor (drop 1 tailTWN)
+          tailGWN = toKebab . fromWords $ tailSWN
+      return $ baseGWN ++ "#" ++ tailGWN
+  | otherwise
+  = return baseGWN
+  where
+    (baseTWN, tailTWN) = break (== '#') twn
+    baseGWN = tracWikiBaseNameToGitlab baseTWN
+
+tracWikiBaseNameToGitlab :: String -> String
+tracWikiBaseNameToGitlab = intercalate "/" . map (toKebab . fromHumps) . splitOn "/"
