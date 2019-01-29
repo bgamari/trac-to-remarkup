@@ -31,7 +31,7 @@ newtype TicketNumber = TicketNumber { getTicketNumber :: Integer }
                      deriving newtype (ToJSON)
 
 data TicketType = FeatureRequest | Bug | MergeReq | Task
-                deriving stock (Show, Generic)
+                deriving stock (Eq, Show, Generic)
                 deriving anyclass (ToJSON)
 
 data Ticket = Ticket { ticketNumber       :: TicketNumber
@@ -58,11 +58,11 @@ data TicketMutation = TicketMutation { ticketMutationTicket :: TicketNumber
                                      deriving (Show, Read, Ord, Eq)
 
 data Priority = PrioLowest | PrioLow | PrioNormal | PrioHigh | PrioHighest
-              deriving stock (Show, Generic)
+              deriving stock (Eq, Show, Generic)
               deriving anyclass (ToJSON)
 
 data Status = New | Assigned | Patch | Merge | Closed | InfoNeeded | Upstream
-            deriving stock (Show, Generic)
+            deriving stock (Eq, Show, Generic)
             deriving anyclass (ToJSON)
 
 data Fields f = Fields { ticketType          :: f TicketType
@@ -111,7 +111,27 @@ instance FieldToJSON f => ToJSON (Fields f) where
           | otherwise
           = []
 
-hoistFields :: (forall a. f a -> g a) -> Fields f -> Fields g
+foldFields :: (Semigroup b) => Fields (Const b) -> b
+foldFields Fields{..}=
+       getConst ticketType
+    <> getConst ticketSummary
+    <> getConst ticketComponent
+    <> getConst ticketPriority
+    <> getConst ticketVersion
+    <> getConst ticketMilestone
+    <> getConst ticketDescription
+    <> getConst ticketTypeOfFailure
+    <> getConst ticketKeywords
+    <> getConst ticketBlockedBy
+    <> getConst ticketRelated
+    <> getConst ticketBlocking
+    <> getConst ticketDifferentials
+    <> getConst ticketTestCase
+    <> getConst ticketStatus
+    <> getConst ticketCC
+    <> getConst ticketOwner
+
+hoistFields :: (forall a. Eq a => f a -> g a) -> Fields f -> Fields g
 hoistFields f Fields{..} =
     Fields { ticketType          = f ticketType
            , ticketSummary       = f ticketSummary
@@ -178,6 +198,13 @@ newtype Differential = Differential { getDifferentialNumber :: Int }
 
 data Update a = Update { oldValue :: Maybe a, newValue :: Maybe a }
   deriving (Show, Functor)
+
+-- | An update is trivial if it either doesn't change anything or contains no
+-- useful information.
+isTrivialUpdate :: Eq a => Update a -> Bool
+isTrivialUpdate (Update Nothing Nothing) = True
+isTrivialUpdate (Update old new) = old == new
+
 
 instance Applicative Update where
   pure x = Update (pure x) (pure x)
@@ -252,7 +279,7 @@ data TypeOfFailure
     | RuntimeCrash
     | RuntimePerformance
     | OtherFailure
-    deriving stock (Show, Generic)
+    deriving stock (Eq, Show, Generic)
     deriving anyclass (ToJSON)
 
 newtype WikiName = WikiName Text
