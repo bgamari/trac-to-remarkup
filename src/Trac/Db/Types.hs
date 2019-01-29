@@ -13,6 +13,7 @@ module Trac.Db.Types where
 
 import GHC.Generics
 import Control.Applicative
+import Data.Monoid
 import Data.Functor.Identity
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -83,6 +84,9 @@ data Fields f = Fields { ticketType          :: f TicketType
                        , ticketCC            :: f (S.Set Text)
                        , ticketOwner         :: f Text
                        }
+
+isTrivialFieldUpdate :: Fields Update -> Bool
+isTrivialFieldUpdate = getAll . foldFields . hoistFields (Const . All . isTrivialUpdate)
 
 instance FieldToJSON f => ToJSON (Fields f) where
     toJSON Fields{..} = object $ concat

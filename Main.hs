@@ -29,7 +29,6 @@ import Data.Functor.Identity
 import Data.List
 import Data.String
 import Data.Maybe
-import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
@@ -879,7 +878,7 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
     fields' <- fromMaybe (changeFields tc)
                <$> withFieldDiff (ticketCC $ changeFields tc) handleSubscriptions
 
-    let trivialUpdate = getAll $ foldFields $ hoistFields (Const . All . isTrivialUpdate) fields'
+    let trivialUpdate = isTrivialFieldUpdate fields'
         trivialComment = isNothing (changeComment tc)
         trivial = trivialComment && trivialUpdate
     when (not trivial) $ createNote fields'
@@ -952,14 +951,15 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                           (changeComment tc)
         let body = T.unlines . catMaybes $
                 [ mrawBody >>= justWhen (not . isCommitComment $ tc)
-                , unlessNull $
-                    fieldsTable
-                      mempty
-                      -- [ ("User", changeAuthor tc) -- ]
-                      fields'
-                , Just ""
-                , Just $ fieldsJSON (changeFields tc)
+                , justWhen (not $ isTrivialFieldUpdate fields')
+                    $ fieldsTable
+                        mempty
+                        -- [ ("User", changeAuthor tc) -- ]
+                        fields'
+                , justWhen (not $ isTrivialFieldUpdate $ changeFields tc)
+                    $ fieldsJSON (changeFields tc)
                 ]
+
         writeLog logger "NOTE" $ show body
         let discard = T.all isSpace body
         mcinId <- if discard
