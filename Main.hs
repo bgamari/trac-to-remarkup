@@ -933,22 +933,20 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
           iid
           (CreateIssueLink project iid project otherIid)
         writeLog logger "LINKED" $ show linkResult
-          
+
       writeLog logger "LINK" (show toLink)
       writeLog logger "UNLINK" (show toUnlink)
 
     -- Translate CC field changes to subscribe/unsubscribe events.
     withFieldDiff (ticketCC $ changeFields tc) $ \toSubscribe toUnsubscribe -> do
-      forM_ toSubscribe $ \subscribeUsername -> do
-        writeLog logger "SUBSCRIBE-USER" $ show subscribeUsername
-        uid <-
-          (findUserByUsername gitlabToken subscribeUsername >>= \case
-            Just u -> pure $ userId u
-            Nothing -> do
-              findUserByEmail gitlabToken subscribeUsername >>= \case
-                Just u -> pure $ userId u
-                Nothing -> error $ "User not found: " ++ show subscribeUsername
-          )
+      writeLog logger "SUBSCRIBE" $ (show toSubscribe)
+      writeLog logger "UNSUBSCRIBE" $ (show toUnsubscribe)
+
+      toSubscribe' <- catMaybes <$> mapM (findUser userIdOracle) toSubscribe
+      toUnsubscribe' <- catMaybes <$> mapM (findUser userIdOracle) toUnsubscribe
+
+      forM_ toSubscribe' $ \uid -> do
+        writeLog logger "SUBSCRIBE-USER" $ show uid
         result <- subscribeIssue
                     logger'
                     gitlabToken
