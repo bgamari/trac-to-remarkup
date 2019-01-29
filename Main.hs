@@ -936,35 +936,47 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
       writeLog logger "UNLINK" (show toUnlink)
 
     -- Translate CC field changes to subscribe/unsubscribe events.
-    withFieldDiff (ticketCC $ changeFields tc) $ \toSubscribe toUnsubscribe -> do
-      writeLog logger "SUBSCRIBE" $ (show toSubscribe)
-      writeLog logger "UNSUBSCRIBE" $ (show toUnsubscribe)
+    let handleSubscriptions :: S.Set Username -> S.Set Username -> ClientM (Fields Update)
+        handleSubscriptions toSubscribe toUnsubscribe = do
+          writeLog logger "SUBSCRIBE" $ (show toSubscribe)
+          writeLog logger "UNSUBSCRIBE" $ (show toUnsubscribe)
 
-      toSubscribe' <- catMaybes <$> mapM (findUser userIdOracle) (toList toSubscribe)
-      toUnsubscribe' <- catMaybes <$> mapM (findUser userIdOracle) (toList toUnsubscribe)
+          let lookupUsers :: S.Set Username -> ClientM (M.Map Username UserId)
+              lookupUsers users =
+                  M.mapMaybe id <$> mapM (findUser userIdOracle) (M.fromSet id users)
+          toSubscribe' <- lookupUsers toSubscribe
+          toUnsubscribe' <- lookupUsers toUnsubscribe
 
-      forM_ toSubscribe' $ \uid -> do
-        writeLog logger "SUBSCRIBE-USER" $ show uid
-        result <- subscribeIssue
-                    logger'
-                    gitlabToken
-                    (Just uid)
-                    project
-                    iid
-        writeLog logger "SUBSCRIBED" $ show result
+          forM_ toSubscribe' $ \uid -> do
+            writeLog logger "SUBSCRIBE-USER" $ show uid
+            result <- subscribeIssue
+                        logger'
+                        gitlabToken
+                        (Just uid)
+                        project
+                        iid
+            writeLog logger "SUBSCRIBED" $ show result
 
-      forM_ toUnsubscribe' $ \uid -> do
-        writeLog logger "UNSUBSCRIBE-USER" $ show uid
-        result <- unsubscribeIssue
-                    logger'
-                    gitlabToken
-                    (Just uid)
-                    project
-                    iid
-        writeLog logger "UNSUBSCRIBED" $ show result
+          forM_ toUnsubscribe' $ \uid -> do
+            writeLog logger "UNSUBSCRIBE-USER" $ show uid
+            result <- unsubscribeIssue
+                        logger'
+                        gitlabToken
+                        (Just uid)
+                        project
+                        iid
+            writeLog logger "UNSUBSCRIBED" $ show result
+
+          let oldCC = ticketCC (changeFields tc)
+              -- Remove the changes we've made via subscription to avoid producing
+              -- unnecessary metadata tables
+              newCC = oldCC { newValue = fmap (\s -> s `S.difference` M.keysSet toSubscribe' `S.union` M.keysSet toUnsubscribe') (newValue oldCC) }
+          return $ (changeFields tc) { ticketCC = newCC }
+
+    fields' <- fromMaybe (changeFields tc) <$> withFieldDiff (ticketCC $ changeFields tc) handleSubscriptions
 
     -- Field updates. Figure out which fields to update.
-    let fields = hoistFields newValue $ changeFields tc
+    let fields = hoistFields newValue fields'
     let status = case ticketStatus fields of
                    Nothing         -> Nothing
                    Just New        -> Just ReopenEvent

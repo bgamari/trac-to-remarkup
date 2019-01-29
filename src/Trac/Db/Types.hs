@@ -205,8 +205,9 @@ instance ConcatFields Maybe where
 
 instance ConcatFields Update where
   concatFields (Update Nothing Nothing) = Nothing
-  concatFields (Update old new) =
-    Just $ fromMaybe "-" old <> " → " <> fromMaybe "-" new
+  concatFields (Update old new)
+    | old == new = Nothing
+    | otherwise  = Just $ fromMaybe "-" old <> " → " <> fromMaybe "-" new
 
 instance ConcatFields Identity where
   concatFields (Identity t) = Just t
