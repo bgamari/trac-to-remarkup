@@ -93,7 +93,6 @@ instance FieldToJSON f => ToJSON (Fields f) where
         [ "type" .=? ticketType
         , "summary" .=? ticketSummary
         , "component" .=? ticketComponent
-        , "priority" .=? ticketPriority
         , "version" .=? ticketVersion
         , "milestone" .=? ticketMilestone
         , "description" .=? ticketDescription
