@@ -16,6 +16,7 @@ import Control.Applicative
 import Data.Functor.Identity
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Set as S
 import Data.Time.Clock
 import Data.Maybe
 import Data.Aeson as Aeson
@@ -72,14 +73,14 @@ data Fields f = Fields { ticketType          :: f TicketType
                        , ticketMilestone     :: f Text
                        , ticketDescription   :: f Text
                        , ticketTypeOfFailure :: f TypeOfFailure
-                       , ticketKeywords      :: f [Text]
-                       , ticketBlockedBy     :: f [TicketNumber]
-                       , ticketRelated       :: f [TicketNumber]
-                       , ticketBlocking      :: f [TicketNumber]
-                       , ticketDifferentials :: f [Differential]
+                       , ticketKeywords      :: f (S.Set Text)
+                       , ticketBlockedBy     :: f (S.Set TicketNumber)
+                       , ticketRelated       :: f (S.Set TicketNumber)
+                       , ticketBlocking      :: f (S.Set TicketNumber)
+                       , ticketDifferentials :: f (S.Set Differential)
                        , ticketTestCase      :: f Text
                        , ticketStatus        :: f Status
-                       , ticketCC            :: f [Text]
+                       , ticketCC            :: f (S.Set Text)
                        , ticketOwner         :: f Text
                        }
 
@@ -172,7 +173,7 @@ deriving instance Show (Fields Identity)
 deriving instance Show (Fields Maybe)
 
 newtype Differential = Differential { getDifferentialNumber :: Int }
-                     deriving stock (Show)
+                     deriving stock (Show, Eq, Ord)
                      deriving newtype (ToJSON)
 
 data Update a = Update { oldValue :: Maybe a, newValue :: Maybe a }

@@ -15,6 +15,7 @@ import Trac.Db.Types
 import qualified Data.Text as T
 import qualified Data.Text.Read as TR
 import Data.Text (Text)
+import qualified Data.Set as S
 import Database.PostgreSQL.Simple
 import Database.PostgreSQL.Simple.FromField
 import Database.PostgreSQL.Simple.ToField
@@ -94,15 +95,15 @@ toTicket conn
     ticketPriority <- i . toPriority . fromMaybe "" <$> findOrig conn "priority" (Just prio) ticketNumber
     ticketVersion <- i . fromMaybe "" <$> findOrig conn "version" mb_version ticketNumber
     ticketMilestone <- i . fromMaybe "" <$> findOrig conn "milestone" mb_milestone ticketNumber
-    ticketKeywords <- i . T.words . fromMaybe "" <$> findOrig conn "keywords" mb_keywords ticketNumber
-    ticketBlockedBy <- i . maybe [] parseTicketList <$> findOrig conn "blockedby" Nothing ticketNumber
-    ticketRelated <- i . maybe [] parseTicketList <$> findOrig conn "related" Nothing ticketNumber
-    ticketBlocking <- i . maybe [] parseTicketList <$> findOrig conn "blocking" Nothing ticketNumber
-    ticketDifferentials <- i . maybe [] parseDifferentials <$> findOrig conn "differential" Nothing ticketNumber
+    ticketKeywords <- i . S.fromList . T.words . fromMaybe "" <$> findOrig conn "keywords" mb_keywords ticketNumber
+    ticketBlockedBy <- i . maybe mempty parseTicketSet <$> findOrig conn "blockedby" Nothing ticketNumber
+    ticketRelated <- i . maybe mempty parseTicketSet <$> findOrig conn "related" Nothing ticketNumber
+    ticketBlocking <- i . maybe mempty parseTicketSet <$> findOrig conn "blocking" Nothing ticketNumber
+    ticketDifferentials <- i . maybe mempty parseDifferentials <$> findOrig conn "differential" Nothing ticketNumber
     ticketTestCase <- i . fromMaybe "" <$> findOrig conn "testcase" Nothing ticketNumber
     ticketDescription <- i . fromMaybe "" <$> findOrig conn "description" mb_description ticketNumber
     ticketTypeOfFailure <- i . toTypeOfFailure . fromMaybe "" <$> findOrig conn "failure" (Just "") ticketNumber
-    ticketCC <- i . commaSep . fromMaybe "" <$> findOrig conn "cc" mb_cc ticketNumber
+    ticketCC <- i . S.fromList . commaSep . fromMaybe "" <$> findOrig conn "cc" mb_cc ticketNumber
     ticketOwner <- i . fromMaybe "" <$> findOrig conn "owner" mb_owner ticketNumber
     let ticketFields = Fields {..}
     return Ticket {..}
@@ -110,16 +111,16 @@ toTicket conn
 commaSep :: T.Text -> [T.Text]
 commaSep = map T.strip . T.split (== ',')
 
-parseTicketList :: T.Text -> [TicketNumber]
-parseTicketList = mapMaybe parseTicketNumber . T.words
+parseTicketSet :: T.Text -> S.Set TicketNumber
+parseTicketSet = S.fromList . mapMaybe parseTicketNumber . T.words
 
 parseTicketNumber :: T.Text -> Maybe TicketNumber
 parseTicketNumber =
     either (const Nothing) (Just . TicketNumber . fst) .
     TR.decimal . T.dropWhile (=='#') . T.strip
 
-parseDifferentials :: T.Text -> [Differential]
-parseDifferentials = mapMaybe parseDifferential . T.words
+parseDifferentials :: T.Text -> S.Set Differential
+parseDifferentials = S.fromList . mapMaybe parseDifferential . T.words
 
 parseDifferential :: T.Text -> Maybe Differential
 parseDifferential str = do
@@ -171,13 +172,13 @@ getTicketChanges conn n mtime = do
           "priority"     -> fieldChange $ emptyFieldsUpdate{ticketPriority = mkUpdate (fmap toPriority) old new}
           "milestone"    -> fieldChange $ emptyFieldsUpdate{ticketMilestone = mkUpdate id old new}
           "testcase"     -> fieldChange $ emptyFieldsUpdate{ticketTestCase = mkUpdate id old new}
-          "keywords"     -> fieldChange $ emptyFieldsUpdate{ticketKeywords = mkUpdate (fmap T.words) old new}
+          "keywords"     -> fieldChange $ emptyFieldsUpdate{ticketKeywords = mkUpdate (fmap $ S.fromList . T.words) old new}
           "status"       -> fieldChange $ emptyFieldsUpdate{ticketStatus = mkJustUpdate toStatus old new}
           "differential" -> fieldChange $ emptyFieldsUpdate{ticketDifferentials = mkUpdate (fmap parseDifferentials) old new}
-          "blocking"     -> fieldChange $ emptyFieldsUpdate{ticketBlocking = mkUpdate (fmap parseTicketList) old new}
-          "blockedby"    -> fieldChange $ emptyFieldsUpdate{ticketBlockedBy = mkUpdate (fmap parseTicketList) old new}
-          "related"      -> fieldChange $ emptyFieldsUpdate{ticketRelated = mkUpdate (fmap parseTicketList) old new}
-          "cc"           -> fieldChange $ emptyFieldsUpdate{ticketCC = mkUpdate (fmap commaSep) old new}
+          "blocking"     -> fieldChange $ emptyFieldsUpdate{ticketBlocking = mkUpdate (fmap parseTicketSet) old new}
+          "blockedby"    -> fieldChange $ emptyFieldsUpdate{ticketBlockedBy = mkUpdate (fmap parseTicketSet) old new}
+          "related"      -> fieldChange $ emptyFieldsUpdate{ticketRelated = mkUpdate (fmap parseTicketSet) old new}
+          "cc"           -> fieldChange $ emptyFieldsUpdate{ticketCC = mkUpdate (fmap $ S.fromList . commaSep) old new}
           "owner"        -> fieldChange $ emptyFieldsUpdate{ticketOwner = mkUpdate id old new}
 
           -- TODO: The other fields

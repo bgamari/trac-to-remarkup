@@ -850,16 +850,14 @@ isCommitComment tc =
   isJust (changeComment tc) &&
   isJust (T.find (== '@') $ changeAuthor tc)
 
-withFieldDiff :: Ord a => Update [a] -> ([a] -> [a] -> ClientM b) -> ClientM (Maybe b)
+withFieldDiff :: Ord a => Update (S.Set a) -> (S.Set a -> S.Set a -> ClientM b) -> ClientM (Maybe b)
 withFieldDiff (Update old new) handler =
   if isJust new
     then do
-      let oldSet = maybe S.empty S.fromList old
-          newSet = maybe S.empty S.fromList new
-      let toAddSet = S.difference newSet oldSet
-          toRemoveSet = S.difference oldSet newSet
-          toAdd = S.toList toAddSet
-          toRemove = S.toList toRemoveSet
+      let new' = fromMaybe mempty new
+          old' = fromMaybe mempty old
+          toAdd = S.difference new' old'
+          toRemove = S.difference old' new'
       Just <$> handler toAdd toRemove
     else
       return Nothing
@@ -942,8 +940,8 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
       writeLog logger "SUBSCRIBE" $ (show toSubscribe)
       writeLog logger "UNSUBSCRIBE" $ (show toUnsubscribe)
 
-      toSubscribe' <- catMaybes <$> mapM (findUser userIdOracle) toSubscribe
-      toUnsubscribe' <- catMaybes <$> mapM (findUser userIdOracle) toUnsubscribe
+      toSubscribe' <- catMaybes <$> mapM (findUser userIdOracle) (toList toSubscribe)
+      toUnsubscribe' <- catMaybes <$> mapM (findUser userIdOracle) (toList toUnsubscribe)
 
       forM_ toSubscribe' $ \uid -> do
         writeLog logger "SUBSCRIBE-USER" $ show uid
@@ -1000,7 +998,7 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                          , eiUpdateTime = Just $ changeTime tc
                          , eiWeight = prioToWeight <$> ticketPriority fields
                          , eiAssignees = (:[]) <$> ownerUid
-                         , eiKeywords = ticketKeywords fields
+                         , eiKeywords = toList <$> ticketKeywords fields
                          }
     writeLog logger "ISSUE-EDIT" . show $ edit
     meid <- if nullEditIssue edit
@@ -1121,7 +1119,7 @@ fieldLabels fields =
     keywordLbls = mconcat
         [ lbl
         | Just keywords <- pure $ ticketKeywords fields
-        , kw <- keywords
+        , kw <- toList keywords
         , Just lbl <- pure $ M.lookup kw keywordLabels
         ]
 
@@ -1161,14 +1159,14 @@ fieldsTable extraRows (f@Fields{..})
         -- , row "Milestone" $ concatFields ticketMilestone
         , row "Component" $ concatFields ticketComponent
         , row "Test case" $ concatFields $ ticketTestCase
-        , row "Differential revisions" $ concatFields $ renderTicketDifferentials <$> ticketDifferentials
+        , row "Differential revisions" $ concatFields $ renderTicketDifferentials . toList <$> ticketDifferentials
         -- , row "Status" $ concatFields $ T.pack . show <$> ticketStatus
         -- , row "Description" $ concatFields $ const "description changed" <$> concatFields ticketDescription
         -- , row "Keywords" $ concatFields $ T.intercalate ", " <$> ticketKeywords
-        , row "BlockedBy" $ concatFields $ renderTicketNumbers <$> ticketBlockedBy
-        , row "Related" $ concatFields $ renderTicketNumbers <$> ticketRelated
-        , row "Blocking" $ concatFields $ renderTicketNumbers <$> ticketBlocking
-        , row "CC" $ concatFields $ T.intercalate ", " <$> ticketCC
+        , row "BlockedBy" $ concatFields $ renderTicketNumbers . toList <$> ticketBlockedBy
+        , row "Related" $ concatFields $ renderTicketNumbers . toList <$> ticketRelated
+        , row "Blocking" $ concatFields $ renderTicketNumbers . toList <$> ticketBlocking
+        , row "CC" $ concatFields $ T.intercalate ", " . toList <$> ticketCC
         -- , row "ALL" $ Just . T.pack . show $ f
         ] ++ extraRows
 
