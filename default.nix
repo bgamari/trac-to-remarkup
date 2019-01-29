@@ -4,7 +4,7 @@ let
 
   inherit (nixpkgs) pkgs;
 
-  f = { mkDerivation, aeson, async, base, bytestring, casing
+  f = { mkDerivation, aeson, lifted-async, base, bytestring, casing
       , connection, containers, data-default, directory, exceptions
       , filepath, http-client-tls, http-types, megaparsec
       , mtl, NoTrace, postgresql-simple, pretty-show, process, servant
@@ -23,7 +23,7 @@ let
           text time taggy lifted-base
         ];
         executableHaskellDepends = [
-          async base bytestring connection containers data-default directory
+          lifted-async base bytestring connection containers data-default directory
           exceptions filepath http-client-tls http-types
           megaparsec mtl postgresql-simple servant-client stm text time
           transformers

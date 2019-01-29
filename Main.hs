@@ -34,6 +34,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as TE
 import System.IO
@@ -53,6 +54,7 @@ import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Network.HTTP.Types.Status
 import Servant.Client
+import Data.Aeson.Text as Aeson
 
 import qualified Git 
 import Git (git, git_, GitException)
@@ -607,6 +609,8 @@ createTicket logger' milestoneMap getUserId commentCache t = do
             [ descriptionBody
             , ""
             , fieldsTable extraRows fields
+            , ""
+            , fieldsJSON fields
             ]
         fields = ticketFields t
     writeLog logger "FIELDS" . show $ fields
@@ -887,6 +891,8 @@ createTicketChanges logger' milestoneMap getUserId commentCache storeComment iid
                   mempty
                   -- [ ("User", changeAuthor tc) -- ]
                   (changeFields tc)
+            , Just ""
+            , Just $ fieldsJSON (changeFields tc)
             ]
     writeLog logger "NOTE" $ show body
     let discard = T.all isSpace body
@@ -1103,6 +1109,11 @@ fieldLabels fields =
 
     failureLbls :: Labels
     failureLbls = maybe mempty typeOfFailureLabels $ ticketTypeOfFailure fields
+
+fieldsJSON :: forall f. (FieldToJSON f, Functor f, ConcatFields f, Show (Fields f))
+           => Fields f -> T.Text
+fieldsJSON fields =
+    TL.toStrict $ "<!-- " <> Aeson.encodeToLazyText fields <> " -->"
 
 fieldsTable :: forall f. (Functor f, ConcatFields f, Show (Fields f))
             => [(Text, Text)] -> Fields f -> T.Text

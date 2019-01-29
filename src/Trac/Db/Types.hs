@@ -4,16 +4,21 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Trac.Db.Types where
 
+import GHC.Generics
 import Control.Applicative
 import Data.Functor.Identity
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Clock
 import Data.Maybe
+import Data.Aeson as Aeson
 
 newtype TracTime = TracTime { tracToUTC :: UTCTime }
                  deriving (Eq, Ord, Show)
@@ -21,10 +26,12 @@ newtype TracTime = TracTime { tracToUTC :: UTCTime }
 type RawTime = Integer
 
 newtype TicketNumber = TicketNumber { getTicketNumber :: Integer }
-                     deriving (Show, Read, Ord, Eq)
+                     deriving stock (Show, Read, Ord, Eq)
+                     deriving newtype (ToJSON)
 
 data TicketType = FeatureRequest | Bug | MergeReq | Task
-                deriving (Show)
+                deriving stock (Show, Generic)
+                deriving anyclass (ToJSON)
 
 data Ticket = Ticket { ticketNumber       :: TicketNumber
                      , ticketCreationTime :: UTCTime
@@ -50,10 +57,12 @@ data TicketMutation = TicketMutation { ticketMutationTicket :: TicketNumber
                                      deriving (Show, Read, Ord, Eq)
 
 data Priority = PrioLowest | PrioLow | PrioNormal | PrioHigh | PrioHighest
-              deriving (Show)
+              deriving stock (Show, Generic)
+              deriving anyclass (ToJSON)
 
 data Status = New | Assigned | Patch | Merge | Closed | InfoNeeded | Upstream
-            deriving (Show)
+            deriving stock (Show, Generic)
+            deriving anyclass (ToJSON)
 
 data Fields f = Fields { ticketType          :: f TicketType
                        , ticketSummary       :: f Text
@@ -73,6 +82,33 @@ data Fields f = Fields { ticketType          :: f TicketType
                        , ticketCC            :: f [Text]
                        , ticketOwner         :: f Text
                        }
+
+instance FieldToJSON f => ToJSON (Fields f) where
+    toJSON Fields{..} = object $ concat
+        [ "type" .=? ticketType
+        , "summary" .=? ticketSummary
+        , "component" .=? ticketComponent
+        , "priority" .=? ticketPriority
+        , "version" .=? ticketVersion
+        , "milestone" .=? ticketMilestone
+        , "description" .=? ticketDescription
+        , "type_of_failure" .=? ticketTypeOfFailure
+        , "keywords" .=? ticketKeywords
+        , "blocked_by" .=? ticketBlockedBy
+        , "related" .=? ticketRelated
+        , "blocking" .=? ticketBlocking
+        , "differentials" .=? ticketDifferentials
+        , "test_case" .=? ticketTestCase
+        , "status" .=? ticketStatus
+        , "cc" .=? ticketCC
+        , "owner" .=? ticketOwner
+        ]
+      where
+        field .=? value
+          | Just x <- fieldToJSON value
+          = [field .= x]
+          | otherwise
+          = []
 
 hoistFields :: (forall a. f a -> g a) -> Fields f -> Fields g
 hoistFields f Fields{..} =
@@ -136,7 +172,8 @@ deriving instance Show (Fields Identity)
 deriving instance Show (Fields Maybe)
 
 newtype Differential = Differential { getDifferentialNumber :: Int }
-                     deriving (Show)
+                     deriving stock (Show)
+                     deriving newtype (ToJSON)
 
 data Update a = Update { oldValue :: Maybe a, newValue :: Maybe a }
   deriving (Show, Functor)
@@ -173,6 +210,18 @@ instance ConcatFields Update where
 instance ConcatFields Identity where
   concatFields (Identity t) = Just t
 
+class FieldToJSON f where
+  fieldToJSON :: ToJSON a => f a -> Maybe Aeson.Value
+
+instance FieldToJSON Update where
+  fieldToJSON (Update a b) =
+      Just $ Aeson.object [ "old" .= a
+                          , "new" .= b
+                          ]
+
+instance FieldToJSON Identity where
+  fieldToJSON (Identity a) = Just $ Aeson.toJSON a
+
 deriving instance Show (Fields Update)
 
 data TicketChange = TicketChange { changeTime    :: UTCTime
@@ -201,7 +250,8 @@ data TypeOfFailure
     | RuntimeCrash
     | RuntimePerformance
     | OtherFailure
-    deriving (Show)
+    deriving stock (Show, Generic)
+    deriving anyclass (ToJSON)
 
 newtype WikiName = WikiName Text
                  deriving (Ord, Eq, Show, Read)

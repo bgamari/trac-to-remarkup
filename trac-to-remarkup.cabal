@@ -98,6 +98,8 @@ executable trac-import
   build-depends: base
                , logging
 
+               , aeson
+               , monad-control
                , lifted-async
                , bytestring
                , connection
