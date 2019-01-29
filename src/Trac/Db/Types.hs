@@ -134,7 +134,9 @@ foldFields Fields{..}=
     <> getConst ticketCC
     <> getConst ticketOwner
 
-hoistFields :: (forall a. Eq a => f a -> g a) -> Fields f -> Fields g
+-- | The constraints here are quite arbitrary; they are just what we happen to
+-- need.
+hoistFields :: (forall a. (IsEmpty a, Eq a) => f a -> g a) -> Fields f -> Fields g
 hoistFields f Fields{..} =
     Fields { ticketType          = f ticketType
            , ticketSummary       = f ticketSummary
@@ -202,13 +204,6 @@ newtype Differential = Differential { getDifferentialNumber :: Int }
 data Update a = Update { oldValue :: Maybe a, newValue :: Maybe a }
   deriving (Show, Functor)
 
--- | An update is trivial if it either doesn't change anything or contains no
--- useful information.
-isTrivialUpdate :: Eq a => Update a -> Bool
-isTrivialUpdate (Update Nothing Nothing) = True
-isTrivialUpdate (Update old new) = old == new
-
-
 instance Applicative Update where
   pure x = Update (pure x) (pure x)
   Update a b <*> Update c d = Update (a <*> c) (b <*> d)
@@ -222,6 +217,39 @@ instance Semigroup a => Semigroup (Update a) where
 
 instance Monoid a => Monoid (Update a) where
   mempty = Update mempty mempty
+
+
+class IsEmpty a where
+    isEmpty :: a -> Bool
+
+instance IsEmpty T.Text where
+    isEmpty = T.null
+
+instance IsEmpty (S.Set a) where
+    isEmpty = S.null
+
+instance IsEmpty TicketType where
+    isEmpty _ = False
+
+instance IsEmpty Priority where
+    isEmpty _ = False
+
+instance IsEmpty TypeOfFailure where
+    isEmpty _ = False
+
+instance IsEmpty Status where
+    isEmpty _ = False
+
+-- | An update is trivial if it either doesn't change anything or contains no
+-- useful information.
+isTrivialUpdate :: (IsEmpty a, Eq a) => Update a -> Bool
+isTrivialUpdate (Update Nothing Nothing) = True
+isTrivialUpdate (Update (Just old) Nothing)
+  | isEmpty old = True
+isTrivialUpdate (Update Nothing (Just new))
+  | isEmpty new = True
+isTrivialUpdate (Update old new) = old == new
+
 
 class ConcatFields f where
   concatFields :: f Text -> Maybe Text
@@ -241,6 +269,7 @@ instance ConcatFields Update where
 instance ConcatFields Identity where
   concatFields (Identity t) = Just t
 
+
 class FieldToJSON f where
   fieldToJSON :: ToJSON a => f a -> Maybe Aeson.Value
 
@@ -254,6 +283,7 @@ instance FieldToJSON Identity where
   fieldToJSON (Identity a) = Just $ Aeson.toJSON a
 
 deriving instance Show (Fields Update)
+
 
 data TicketChange = TicketChange { changeTime    :: UTCTime
                                  , changeAuthor  :: Text
