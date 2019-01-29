@@ -186,7 +186,7 @@ main = do
     conn <- connectPostgreSQL dsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
-    getUserId <- mkUserIdOracle logger conn env
+    userIdOracle <- mkUserIdOracle logger conn env
 
     (finishedMutations, finishMutation) <- openStateFile mutationStateFile
 
@@ -236,7 +236,7 @@ main = do
                       logger
                       conn
                       milestoneMap
-                      getUserId
+                      userIdOracle
                       commentCache
                       finishMutation
                       storeComment
@@ -248,7 +248,7 @@ main = do
         unless skipAttachments
           $ Logging.withContext logger "attachments"
           $ printErrors logger
-          $ runClientM (makeAttachments logger conn getUserId) env
+          $ runClientM (makeAttachments logger conn userIdOracle) env
             >>= throwLeft
 
         unless skipWiki
@@ -326,7 +326,9 @@ sanitizeUsername n
       | isDigit c  = c
     fixChars c = '_'
 
-type UserIdOracle = Username -> ClientM UserId
+data UserIdOracle = UserIdOracle { findOrCreateUser :: Username -> ClientM UserId
+                                 , findUser :: Username -> ClientM (Maybe UserId)
+                                 }
 
 withMVarState :: forall s m a. (MonadMask m, MonadIO m)
               => MVar s -> StateT s m a -> m a
@@ -346,15 +348,18 @@ type UserIdCache = M.Map Username UserId
 mkUserIdOracle :: Logger -> Connection -> ClientEnv -> IO UserIdOracle
 mkUserIdOracle logger conn clientEnv = do
     cacheVar <- newMVar mempty
-    let runIt :: Username -> StateT UserIdCache IO (Maybe UserId)
-        runIt username = StateT $ \cache -> do
-            res <- runClientM (runStateT (runMaybeT $ getUserId $ T.strip username) cache) clientEnv
+    let runIt :: Bool -> Username -> StateT UserIdCache IO (Maybe UserId)
+        runIt create username = StateT $ \cache -> do
+            res <- runClientM (runStateT (runMaybeT $ getUserId create $ T.strip username) cache) clientEnv
             writeLog logger "RESOLVE USER" $ show username ++ " -> " ++ show (fmap fst res)
             either throwM pure res
-    return $ liftIO
-           . fmap (fromMaybe $ error "couldn't resolve user id")
-           . withMVarState cacheVar
-           . runIt
+    let oracle :: Bool -> Username -> ClientM (Maybe UserId)
+        oracle create = liftIO
+                        . withMVarState cacheVar
+                        . runIt create
+    return $ UserIdOracle { findOrCreateUser = \user -> fromMaybe (error "couldn't resolve user id") <$> oracle True user
+                          , findUser = oracle False
+                          }
   where
     tee :: (Show a, Monad m, MonadIO m) => String -> m a -> m a
     tee msg a = do
@@ -362,8 +367,8 @@ mkUserIdOracle logger conn clientEnv = do
       liftIO . writeLog logger "INFO" $ msg ++ show x
       return x
 
-    getUserId :: Username -> UserLookupM UserId
-    getUserId username =
+    getUserId :: Bool -> Username -> UserLookupM UserId
+    getUserId create username =
             tee "tryEmptyUserName" tryEmptyUserName
         <|> tee "tryCache" tryCache
         <|> cacheIt (tee "tryLookupName - " tryLookupName)
@@ -376,7 +381,7 @@ mkUserIdOracle logger conn clientEnv = do
 
         tryEmptyUserName :: UserLookupM UserId
         tryEmptyUserName
-          | username == "" = getUserId "unknown"
+          | username == "" = getUserId create "unknown"
           | otherwise      = empty
 
         tryCache :: UserLookupM UserId
@@ -397,7 +402,9 @@ mkUserIdOracle logger conn clientEnv = do
             fmap userId $ MaybeT $ lift $ tee "user by email" $ findUserByEmail gitlabToken cuEmail
 
         tryCreate :: UserLookupM UserId
-        tryCreate = do
+        tryCreate
+          | not create = empty
+          | otherwise = do
             m_email <- liftIO $ getUserAttribute conn Trac.Email username
             uidMay <- lift $ do
               let cuEmail = case m_email of
@@ -450,12 +457,12 @@ makeMilestones logger actuallyMakeThem conn = do
         return M.empty
 
 makeAttachment :: Logger -> UserIdOracle -> Attachment -> ClientM ()
-makeAttachment logger getUserId (Attachment{..})
+makeAttachment logger userIdOracle (Attachment{..})
   | TicketAttachment ticketNum <- aResource = do
         liftIO $ writeLog logger "ATTACHMENT" $ show (aResource, aFilename)
         mgr <- manager <$> ask
         content <- liftIO $ Trac.Web.fetchTicketAttachment tracBaseUrl ticketNum aFilename
-        uid <- getUserId aAuthor
+        uid <- findOrCreateUser userIdOracle aAuthor
         msg <- if ".hs" `T.isSuffixOf` aFilename && BS.length content < 30000
             then mkSnippet uid ticketNum content
             else mkAttachment uid ticketNum content
@@ -498,14 +505,14 @@ makeAttachment logger getUserId (Attachment{..})
         void $ createIssueNote gitlabToken (Just uid) project iid note
 
 makeAttachments :: Logger -> Connection -> UserIdOracle -> ClientM ()
-makeAttachments logger conn getUserId = do
+makeAttachments logger conn userIdOracle = do
     attachments <- liftIO $ getAttachments conn
     (finishedAttachments, finishAttachment) <-
         liftIO $ openStateFile attachmentStateFile
     let makeAttachment' a
           | aIdent `S.member` finishedAttachments = return ()
           | otherwise = handleAll onError $ flip catchError onError $ do
-            makeAttachment logger getUserId a
+            makeAttachment logger userIdOracle a
             liftIO $ finishAttachment aIdent
           where
             aIdent = (aResource a, aFilename a, aTime a)
@@ -523,7 +530,7 @@ makeMutations :: Logger
               -> StoreComment
               -> [Trac.TicketMutation]
               -> ClientM ()
-makeMutations logger' conn milestoneMap getUserId commentCache finishMutation storeComment mutations = do
+makeMutations logger' conn milestoneMap userIdOracle commentCache finishMutation storeComment mutations = do
   mapM_ makeMutation' mutations
   where
     logger :: LoggerM ClientM
@@ -537,7 +544,7 @@ makeMutations logger' conn milestoneMap getUserId commentCache finishMutation st
           -- Create a new ticket
           Trac.CreateTicket -> do
             ticket <- liftIO $ fromMaybe (error "Ticket not found") <$> Trac.getTicket (ticketMutationTicket m) conn
-            iid@(IssueIid issueID) <- createTicket logger' milestoneMap getUserId commentCache ticket
+            iid@(IssueIid issueID) <- createTicket logger' milestoneMap userIdOracle commentCache ticket
             if ((fromIntegral . getTicketNumber . ticketNumber $ ticket) == issueID)
               then
                 return ()
@@ -553,7 +560,7 @@ makeMutations logger' conn milestoneMap getUserId commentCache finishMutation st
             createTicketChanges
                 logger'
                 milestoneMap
-                getUserId
+                userIdOracle
                 commentCache
                 storeComment
                 iid $ collapseChanges changes
@@ -601,10 +608,10 @@ createTicket :: Logger
              -> CommentCacheVar
              -> Ticket
              -> ClientM IssueIid
-createTicket logger' milestoneMap getUserId commentCache t = do
+createTicket logger' milestoneMap userIdOracle commentCache t = do
     let logger = liftLogger logger'
     writeLog logger "TICKET-NR" . show $ ticketNumber t
-    creatorUid <- getUserId $ ticketCreator t
+    creatorUid <- findOrCreateUser userIdOracle $ ticketCreator t
     descriptionBody <- liftIO $
           tracToMarkdown logger' commentCache (ticketNumber t) $
           runIdentity $
@@ -624,7 +631,7 @@ createTicket logger' milestoneMap getUserId commentCache t = do
                   then
                     pure Nothing
                   else
-                    Just <$> getUserId owner
+                    Just <$> findOrCreateUser userIdOracle owner
     let iid = ticketNumberToIssueIid $ ticketNumber t
         issue = CreateIssue { ciIid = Just iid
                             , ciTitle = runIdentity $ ticketSummary fields
@@ -856,7 +863,7 @@ withFieldDiff (Update old new) handler =
       Just <$> handler toAdd toRemove
     else
       return Nothing
- 
+
 createTicketChanges :: Logger
                     -> MilestoneMap
                     -> UserIdOracle
@@ -865,10 +872,10 @@ createTicketChanges :: Logger
                     -> IssueIid
                     -> TicketChange
                     -> ClientM ()
-createTicketChanges logger' milestoneMap getUserId commentCache storeComment iid tc = do
+createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment iid tc = do
     let logger = liftLogger logger'
     writeLog logger "TICKET-CHANGE" . show $ tc
-    authorUid <- getUserId $ changeAuthor tc
+    authorUid <- findOrCreateUser userIdOracle $ changeAuthor tc
     let t = case iid of IssueIid n -> TicketNumber $ fromIntegral n
 
     -- Figure out the comment number. We have to do this by counting how many
@@ -976,7 +983,7 @@ createTicketChanges logger' milestoneMap getUserId commentCache storeComment iid
 
     ownerUid <- maybe
                   (pure Nothing)
-                  (fmap Just . getUserId)
+                  (fmap Just . findOrCreateUser userIdOracle)
                   (ticketOwner fields)
 
     let edit = EditIssue { eiTitle = notNull $ ticketSummary fields
