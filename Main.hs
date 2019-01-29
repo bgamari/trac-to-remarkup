@@ -18,6 +18,7 @@ import Control.Monad.Trans.Class
 import Control.Monad.Reader.Class
 import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.State
+import Control.Monad.Trans.Control
 import Control.Concurrent
 import Control.Exception.Lifted (bracket)
 import Control.Concurrent.Async.Lifted (mapConcurrently_, race_, race)
@@ -532,14 +533,14 @@ makeMutations logger' conn milestoneMap getUserId commentCache finishMutation st
       handleAll onError $
       flip catchError onError $
       Logging.withContext logger (show . getTicketNumber . ticketMutationTicket $ m) $ do
-        withTimeout 10000 $ case ticketMutationType m of
+        result <- withTimeout 10000 $ case ticketMutationType m of
           -- Create a new ticket
           Trac.CreateTicket -> do
             ticket <- liftIO $ fromMaybe (error "Ticket not found") <$> Trac.getTicket (ticketMutationTicket m) conn
             iid@(IssueIid issueID) <- createTicket logger' milestoneMap getUserId commentCache ticket
             if ((fromIntegral . getTicketNumber . ticketNumber $ ticket) == issueID)
               then
-                (liftIO $ finishMutation m)
+                return ()
               else
                 (writeLog logger "TICKET NUMBER MISMATCH" $ show (ticketNumber ticket) ++ " /= " ++ show iid)
               
@@ -556,7 +557,11 @@ makeMutations logger' conn milestoneMap getUserId commentCache finishMutation st
                 commentCache
                 storeComment
                 iid $ collapseChanges changes
-            liftIO $ finishMutation m
+            return ()
+
+        case result of
+          Just _  -> liftIO $ finishMutation m
+          Nothing -> return ()
 
       where
         onError :: (Show a) => a -> ClientM ()
@@ -641,9 +646,9 @@ createTicket logger' milestoneMap getUserId commentCache t = do
     liftIO . writeLog logger' "ISSUE-CREATED" . show $ ir
     return $ irIid ir
 
-withTimeout :: MonadBaseControl IO m => Int -> m a -> m (Maybe a)
+withTimeout :: (MonadIO m, MonadBaseControl IO m) => Int -> m a -> m (Maybe a)
 withTimeout delayMS action =
-  either Just (const Nothing) <$> race action reaper
+  either Just (const Nothing) <$> race action (liftIO reaper)
   where
     reaper :: IO ()
     reaper = do
