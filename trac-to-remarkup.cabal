@@ -98,7 +98,7 @@ executable trac-import
   build-depends: base
                , logging
 
-               , async
+               , lifted-async
                , bytestring
                , connection
                , containers

@@ -20,7 +20,7 @@ import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.State
 import Control.Concurrent
 import Control.Exception.Lifted (bracket)
-import Control.Concurrent.Async (mapConcurrently_, race_, race)
+import Control.Concurrent.Async.Lifted (mapConcurrently_, race_, race)
 import Data.Default (def)
 import Data.Foldable
 import Data.Function
@@ -524,7 +524,7 @@ makeMutations logger' conn milestoneMap getUserId commentCache finishMutation st
       handleAll onError $
       flip catchError onError $
       Logging.withContext logger (show . getTicketNumber . ticketMutationTicket $ m) $ do
-        case ticketMutationType m of
+        withTimeout 10000 $ case ticketMutationType m of
           -- Create a new ticket
           Trac.CreateTicket -> do
             ticket <- liftIO $ fromMaybe (error "Ticket not found") <$> Trac.getTicket (ticketMutationTicket m) conn
@@ -630,7 +630,7 @@ createTicket logger' milestoneMap getUserId commentCache t = do
     liftIO . writeLog logger' "ISSUE-CREATED" . show $ ir
     return $ irIid ir
 
-withTimeout :: Int -> IO a -> IO (Maybe a)
+withTimeout :: MonadBaseControl IO m => Int -> m a -> m (Maybe a)
 withTimeout delayMS action =
   either Just (const Nothing) <$> race action reaper
   where
