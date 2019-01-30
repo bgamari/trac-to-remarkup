@@ -626,12 +626,9 @@ createTicket logger' milestoneMap userIdOracle commentCache t = do
             ]
         fields = ticketFields t
     writeLog logger "FIELDS" . show $ fields
-    let owner = runIdentity . ticketOwner $ fields
-    ownerUid <- if T.null owner
-                  then
-                    pure Nothing
-                  else
-                    Just <$> findOrCreateUser userIdOracle owner
+    ownerUid <- case runIdentity . ticketOwner $ fields of
+                  Unowned -> return []
+                  OwnedBy user -> (:[]) <$> findOrCreateUser userIdOracle (getTracUser user)
     let iid = ticketNumberToIssueIid $ ticketNumber t
         issue = CreateIssue { ciIid = Just iid
                             , ciTitle = runIdentity $ ticketSummary fields
@@ -640,7 +637,7 @@ createTicket logger' milestoneMap userIdOracle commentCache t = do
                             , ciDescription = Just description
                             , ciMilestoneId = Just $ M.lookup (runIdentity $ ticketMilestone fields) milestoneMap
                             , ciWeight = Just $ prioToWeight $ runIdentity $ ticketPriority fields
-                            , ciAssignees = (:[]) <$> ownerUid
+                            , ciAssignees = Just ownerUid
                             }
     writeLog logger "ISSUE" . show $ issue
     let ignore404 (FailureResponse resp)
@@ -1013,10 +1010,10 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                     (fmap Just . tracToMarkdown logger' commentCache t)
                     (ticketDescription fields)
 
-        ownerUid <- maybe
-                      (pure Nothing)
-                      (fmap Just . findOrCreateUser userIdOracle)
-                      (ticketOwner fields)
+        ownerUid <- case ticketOwner fields of
+          Just Unowned  -> return $ Just []
+          Just (OwnedBy user) -> Just . (:[]) <$> findOrCreateUser userIdOracle (getTracUser user)
+          Nothing -> return Nothing
 
         let edit = EditIssue { eiTitle = notNull $ ticketSummary fields
                             , eiDescription = description
@@ -1025,7 +1022,7 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                             , eiStatus = status
                             , eiUpdateTime = Just $ changeTime tc
                             , eiWeight = prioToWeight <$> ticketPriority fields
-                            , eiAssignees = (:[]) <$> ownerUid
+                            , eiAssignees = ownerUid
                             , eiKeywords = toList <$> ticketKeywords fields
                             }
         writeLog logger "ISSUE-EDIT" . show $ edit

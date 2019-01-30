@@ -104,7 +104,7 @@ toTicket conn
     ticketDescription <- i . fromMaybe "" <$> findOrig conn "description" mb_description ticketNumber
     ticketTypeOfFailure <- i . toTypeOfFailure . fromMaybe "" <$> findOrig conn "failure" (Just "") ticketNumber
     ticketCC <- i . S.fromList . commaSep . fromMaybe "" <$> findOrig conn "cc" mb_cc ticketNumber
-    ticketOwner <- i . fromMaybe "" <$> findOrig conn "owner" mb_owner ticketNumber
+    ticketOwner <- i . maybe Unowned toTicketOwner <$> findOrig conn "owner" mb_owner ticketNumber
     ticketOperatingSystem <- i . fromMaybe "" <$> findOrig conn "os" mb_owner ticketNumber
     let ticketFields = Fields {..}
     return Ticket {..}
@@ -180,7 +180,7 @@ getTicketChanges conn n mtime = do
           "blockedby"    -> fieldChange $ emptyFieldsUpdate{ticketBlockedBy = mkUpdate (fmap parseTicketSet) old new}
           "related"      -> fieldChange $ emptyFieldsUpdate{ticketRelated = mkUpdate (fmap parseTicketSet) old new}
           "cc"           -> fieldChange $ emptyFieldsUpdate{ticketCC = mkUpdate (fmap $ S.fromList . commaSep) old new}
-          "owner"        -> fieldChange $ emptyFieldsUpdate{ticketOwner = mkUpdate id old new}
+          "owner"        -> fieldChange $ emptyFieldsUpdate{ticketOwner = mkUpdate (fmap toTicketOwner) old new}
           "component"    -> fieldChange $ emptyFieldsUpdate{ticketComponent = mkUpdate id old new}
           "version"      -> fieldChange $ emptyFieldsUpdate{ticketVersion = mkUpdate id old new}
           "failure"      -> fieldChange $ emptyFieldsUpdate{ticketTypeOfFailure = mkUpdate (fmap toTypeOfFailure) old new}

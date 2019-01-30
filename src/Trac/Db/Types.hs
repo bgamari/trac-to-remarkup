@@ -27,6 +27,20 @@ newtype TracTime = TracTime { tracToUTC :: UTCTime }
 
 type RawTime = Integer
 
+newtype TracUser = TracUser { getTracUser :: Text }
+                 deriving stock (Show, Read, Ord, Eq)
+                 deriving newtype (ToJSON)
+
+data TicketOwner = OwnedBy TracUser
+                 | Unowned
+                 deriving stock (Show, Read, Ord, Eq, Generic)
+                 deriving anyclass (ToJSON)
+
+toTicketOwner :: Text -> TicketOwner
+toTicketOwner x
+  | T.null x = Unowned
+  | otherwise = OwnedBy $ TracUser x
+
 newtype TicketNumber = TicketNumber { getTicketNumber :: Integer }
                      deriving stock (Show, Read, Ord, Eq)
                      deriving newtype (ToJSON)
@@ -82,7 +96,7 @@ data Fields f = Fields { ticketType            :: f TicketType
                        , ticketTestCase        :: f Text
                        , ticketStatus          :: f Status
                        , ticketCC              :: f (S.Set Text)
-                       , ticketOwner           :: f Text
+                       , ticketOwner           :: f TicketOwner
                        , ticketOperatingSystem :: f Text
                        }
 
@@ -229,6 +243,10 @@ class IsEmpty a where
 
 instance IsEmpty T.Text where
     isEmpty = T.null
+
+instance IsEmpty TicketOwner where
+    isEmpty Unowned = True
+    isEmpty _ = False
 
 instance IsEmpty (S.Set a) where
     isEmpty = S.null
