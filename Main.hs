@@ -723,7 +723,7 @@ buildWiki logger fast keepGit commentCache conn = do
                   wpName
                   wpVersion
 
-          mbody <- dealWithHttpError logger 0 .  withTimeout 10000 $ do
+          mbody <- dealWithHttpError logger 0 .  withTimeout 100000 $ do
                       src <- Scraper.httpGet logger url
                       anchorMap <- takeMVar anchorMapVar
                       (dst, manchorMap') <-
