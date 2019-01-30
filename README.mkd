@@ -1,8 +1,9 @@
 Usage
 =====
 
-*note:* This requires a patched GitLab installation during import to allow
-Ticket IDs to be preserved.
+*note:* This requires a
+[patched](https://gitlab.com/bgamari/gitlab-ce/tree/haskell-import-ee) GitLab
+installation.
 
 1. Reset GitLab database
 
@@ -31,3 +32,8 @@ Ticket IDs to be preserved.
 8. Build & run it
 9. Push `ghc/ghc` repo
 10. Run  `create-mirrors.py`
+11. Clear the `mailers` sidekiq queue
+12. Run `git push git@gitlab.haskell.org:ghc/ghc
+    origin/master:refs/heads/magic-carpet-ride` to trigger reprocessing of issue
+    mentions in commits
+13. Clear the `mailers` sidekiq queue again before reenabling mail
