@@ -606,7 +606,8 @@ nthMay n = listToMaybe . drop n
 -- Ensures that we don't produce redundant comments containing only JSON metadata.
 filterFieldChanges :: Fields Update -> Fields Update
 filterFieldChanges fields =
-    fields { ticketOwner = noUpdate
+    fields { ticketType = noUpdate
+           , ticketOwner = noUpdate
            , ticketSummary = noUpdate
            , ticketStatus = noUpdate
            }
