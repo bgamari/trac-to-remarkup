@@ -57,7 +57,7 @@ import Network.HTTP.Types.Status
 import Servant.Client
 import Data.Aeson.Text as Aeson
 
-import qualified Git 
+import qualified Git
 import Git (git, git_, GitException)
 import Logging (LoggerM (..), Logger, makeStdoutLogger, writeLog, liftLogger)
 import qualified Logging
@@ -221,7 +221,7 @@ main = do
             dummyGetCommentId
             src
           putStrLn dst
-          
+
       else do
         milestoneMap <- either (error . show) id <$> runClientM (makeMilestones logger (not skipMilestones) conn) env
 
@@ -550,7 +550,7 @@ makeMutations logger' conn milestoneMap userIdOracle commentCache finishMutation
                 return ()
               else
                 (writeLog logger "TICKET NUMBER MISMATCH" $ show (ticketNumber ticket) ++ " /= " ++ show iid)
-              
+
           -- Apply a ticket change
           Trac.ChangeTicket -> do
             changes <- liftIO $ Trac.getTicketChanges conn (ticketMutationTicket m) (Just $ ticketMutationTime m)
@@ -825,7 +825,7 @@ dealWithHttpError logger n action = action `catch` h
       retry
     h e@(HttpExceptionRequest _ ResponseTimeout {}) =
       retry
-      
+
     h e = do
       writeLog logger "HTTP-ERROR" $ displayException e
       return Nothing
@@ -976,8 +976,8 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                         return Nothing
                       else do
                         let note = CreateIssueNote { cinBody = body
-                                                  , cinCreatedAt = Just $ changeTime tc
-                                                  }
+                                                   , cinCreatedAt = Just $ changeTime tc
+                                                   }
                         cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
                         writeLog logger "NOTE-CREATED" $ show commentNumber ++ " -> " ++ show cinResp
                         return (Just . NoteRef . inrId $ cinResp)
@@ -1027,15 +1027,15 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
           Nothing -> return Nothing
 
         let edit = EditIssue { eiTitle = notNull $ ticketSummary fields
-                            , eiDescription = description
-                            , eiMilestoneId = fmap (`M.lookup` milestoneMap) (ticketMilestone fields)
-                            , eiLabels = Just $ fieldLabels fields
-                            , eiStatus = status
-                            , eiUpdateTime = Just $ changeTime tc
-                            , eiWeight = prioToWeight <$> ticketPriority fields
-                            , eiAssignees = ownerUid
-                            , eiKeywords = toList <$> ticketKeywords fields
-                            }
+                             , eiDescription = description
+                             , eiMilestoneId = fmap (`M.lookup` milestoneMap) (ticketMilestone fields)
+                             , eiLabels = Just $ fieldLabels fields
+                             , eiStatus = status
+                             , eiUpdateTime = Just $ changeTime tc
+                             , eiWeight = prioToWeight <$> ticketPriority fields
+                             , eiAssignees = ownerUid
+                             , eiKeywords = toList <$> ticketKeywords fields
+                             }
         writeLog logger "ISSUE-EDIT" . show $ edit
         meid <- if nullEditIssue edit
                   then
