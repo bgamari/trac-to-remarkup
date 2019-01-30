@@ -644,7 +644,7 @@ createTicket logger' milestoneMap userIdOracle commentCache t = do
     let iid = ticketNumberToIssueIid $ ticketNumber t
         issue = CreateIssue { ciIid = Just iid
                             , ciTitle = runIdentity $ ticketSummary fields
-                            , ciLabels = Just $ fieldLabels $ hoistFields (Just . runIdentity) fields
+                            , ciLabels = Just $ additions $ fieldLabels $ hoistFields (Update Nothing . Just . runIdentity) fields
                             , ciCreatedAt = Just $ ticketCreationTime t
                             , ciDescription = Just description
                             , ciMilestoneId = Just $ M.lookup (runIdentity $ ticketMilestone fields) milestoneMap
@@ -1027,10 +1027,14 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
           Just (OwnedBy user) -> Just . (:[]) <$> findOrCreateUser userIdOracle (getTracUser user)
           Nothing -> return Nothing
 
+        currentLabels <- irLabels <$> getIssue gitlabToken project iid
+        let labelAddRemoves = fieldLabels fields'
+            labels' = (currentLabels `diffLabels` removals labelAddRemoves) <> additions labelAddRemoves
+
         let edit = EditIssue { eiTitle = notNull $ ticketSummary fields
                              , eiDescription = description
                              , eiMilestoneId = fmap (`M.lookup` milestoneMap) (ticketMilestone fields)
-                             , eiLabels = Just $ fieldLabels fields
+                             , eiLabels = Just labels'
                              , eiStatus = status
                              , eiUpdateTime = Just $ changeTime tc
                              , eiWeight = prioToWeight <$> ticketPriority fields
@@ -1079,53 +1083,59 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
           (M.lookup (unIssueIid iid) <$> readMVar commentCache))
           >>= writeLog logger "STORE-COMMENT" . show
 
--- | Maps Trac keywords to labels
-keywordLabels :: M.Map Text Labels
-keywordLabels = M.fromList
-    $ [ passthru "newcomer"
-      , ("newcomers", "newcomer")
-      , passthru "TypeInType"
-      , passthru "TypeFamilies"
-      , passthru "PatternSynonyms"
-      , passthru "Deriving"
-      , passthru "Generics"
-      , passthru "pattern match warnings"
-      , passthru "Inlining"
-      , passthru "QuantifiedConstraints"
-      , passthru "TypeApplications"
-      , passthru "levity polymorphism"
-      , passthru "CodeGen"
-      , passthru "GADTs"
-      , "JoinPoints" .= "join points"
-      , passthru "Typeable"
-      , ("Typeable", "Typeable")
-      , ("ORF", "OverloadedRecordFields")
-      , ("hs-boot", "hs-boot")
-      , passthru "SpecConstr"
-      , passthru "ApplicativeDo"
-      , passthru "FunDeps"
-      , "TypedHoles" .= "typed holes"
-      , passthru "CSE"
-      , ("TypeCheckerPlugins", "plugins")
-      , ("deriving-perf", "Deriving" <> "compiler perf")
-      , passthru "CUSKs"
-      , passthru "PolyKinds"
-      , ("performance", "runtime perf")
-      , ("ci-breakage", "CI breakage")
 
-      , ("DWARF", "debug information")
-      , passthru "SafeHaskell"
-      , passthru "CustomTypeErrors"
-      , passthru "StaticPointers"
-      , passthru "Unicode"
-      , ("warnings", "error messages")
-      , passthru "Arrows"
-      , passthru "SIMD"
-      , passthru "TemplateHaskell"
-      ]
+-- | Maps Trac keywords to labels
+keywordLabels :: Text -> Labels
+keywordLabels =
+    fromMaybe mempty . flip M.lookup labelMapping
   where
-    passthru x = (x, mkLabel x)
-    (.=) = (,)
+    labelMapping :: M.Map Text Labels
+    labelMapping =
+      M.fromList
+      $ [ passthru "newcomer"
+        , ("newcomers", "newcomer")
+        , passthru "TypeInType"
+        , passthru "TypeFamilies"
+        , passthru "PatternSynonyms"
+        , passthru "Deriving"
+        , passthru "Generics"
+        , passthru "pattern match warnings"
+        , passthru "Inlining"
+        , passthru "QuantifiedConstraints"
+        , passthru "TypeApplications"
+        , passthru "levity polymorphism"
+        , passthru "CodeGen"
+        , passthru "GADTs"
+        , "JoinPoints" .= "join points"
+        , passthru "Typeable"
+        , ("Typeable", "Typeable")
+        , ("ORF", "OverloadedRecordFields")
+        , ("hs-boot", "hs-boot")
+        , passthru "SpecConstr"
+        , passthru "ApplicativeDo"
+        , passthru "FunDeps"
+        , "TypedHoles" .= "typed holes"
+        , passthru "CSE"
+        , ("TypeCheckerPlugins", "plugins")
+        , ("deriving-perf", "Deriving" <> "compiler perf")
+        , passthru "CUSKs"
+        , passthru "PolyKinds"
+        , ("performance", "runtime perf")
+        , ("ci-breakage", "CI breakage")
+
+        , ("DWARF", "debug information")
+        , passthru "SafeHaskell"
+        , passthru "CustomTypeErrors"
+        , passthru "StaticPointers"
+        , passthru "Unicode"
+        , ("warnings", "error messages")
+        , passthru "Arrows"
+        , passthru "SIMD"
+        , passthru "TemplateHaskell"
+        ]
+      where
+        passthru x = (x, mkLabel x)
+        (.=) = (,)
 
 typeOfFailureLabels :: TypeOfFailure -> Labels
 typeOfFailureLabels t =
@@ -1148,27 +1158,38 @@ typeOfFailureLabels t =
       RuntimePerformance        -> "RuntimePerformance"
       OtherFailure              -> mempty
 
-fieldLabels :: Fields Maybe -> Labels
+ticketTypeLabel :: TicketType -> Labels
+ticketTypeLabel Bug = "bug"
+ticketTypeLabel Task = "task"
+ticketTypeLabel FeatureRequest = "feature request"
+
+fieldLabels :: Fields Update -> AddRemove Labels
 fieldLabels fields =
-    "Trac import" <> keywordLbls <> failureLbls <> typeLbls
+    add "Trac import" <> keywordLbls <> failureLbls <> typeLbls
   where
-    keywordLbls = mconcat
-        [ lbl
-        | Just keywords <- pure $ ticketKeywords fields
-        , kw <- toList keywords
-        , Just lbl <- pure $ M.lookup kw keywordLabels
-        ]
+    keywordLbls = toAddRemove id $ fmap (foldMap keywordLabels) (ticketKeywords fields)
+    typeLbls = toAddRemove ticketTypeLabel (ticketType fields)
+    failureLbls = toAddRemove typeOfFailureLabels (ticketTypeOfFailure fields)
 
-    typeLbls :: Labels
-    typeLbls =
-        case ticketType fields of
-          Just Bug -> "bug"
-          Just Task -> "task"
-          Just FeatureRequest -> "feature request"
-          Nothing -> mempty
 
-    failureLbls :: Labels
-    failureLbls = maybe mempty typeOfFailureLabels $ ticketTypeOfFailure fields
+data AddRemove a = AddRemove { additions, removals :: a }
+
+instance Semigroup a => Semigroup (AddRemove a) where
+    AddRemove a b <> AddRemove c d = AddRemove (a<>c) (b<>d)
+
+instance Monoid a => Monoid (AddRemove a) where
+    mempty = AddRemove mempty mempty
+
+add :: Monoid a => a -> AddRemove a
+add x = mempty { additions = x }
+
+remove :: Monoid a => a -> AddRemove a
+remove x = mempty { removals = x }
+
+toAddRemove :: Monoid b => (a -> b) -> Update a -> AddRemove b
+toAddRemove f (Update old new) =
+    AddRemove { removals = maybe mempty f old, additions = maybe mempty f new }
+
 
 fieldsJSON :: forall f. (FieldToJSON f, Functor f, ConcatFields f, Show (Fields f))
            => Fields f -> T.Text

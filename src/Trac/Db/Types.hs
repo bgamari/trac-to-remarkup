@@ -243,7 +243,6 @@ instance Semigroup a => Semigroup (Update a) where
 instance Monoid a => Monoid (Update a) where
   mempty = Update mempty mempty
 
-
 class IsEmpty a where
     isEmpty :: a -> Bool
 

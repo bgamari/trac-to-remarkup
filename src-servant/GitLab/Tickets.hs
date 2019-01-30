@@ -37,6 +37,7 @@ type GetIssueAPI =
 data IssueResp
     = IssueResp { irProjectId :: ProjectId
                 , irIid :: IssueIid
+                , irLabels :: Labels
                 }
     deriving (Show)
 
@@ -44,6 +45,7 @@ instance FromJSON IssueResp where
     parseJSON = withObject "issue response" $ \o ->
       IssueResp <$> o .: "project_id"
                 <*> o .: "iid"
+                <*> o .: "labels"
 
 getIssue :: AccessToken -> ProjectId -> IssueIid -> ClientM IssueResp
 getIssue tok prj iid =

@@ -46,21 +46,27 @@ newtype ProjectId = ProjectId Int
 newtype Labels = Labels (S.Set Text)
                deriving (Semigroup, Monoid, Show)
 
-data StatusEvent = CloseEvent | ReopenEvent
-                 deriving (Show)
-
-instance ToJSON StatusEvent where
-    toJSON CloseEvent  = "close"
-    toJSON ReopenEvent = "reopen"
-
 mkLabel :: Text -> Labels
 mkLabel = Labels . S.singleton
+
+diffLabels :: Labels -> Labels -> Labels
+diffLabels (Labels x) (Labels y) = Labels $ x `S.difference` y
 
 instance IsString Labels where
     fromString = mkLabel . T.pack
 
 instance ToJSON Labels where
     toJSON (Labels lbls) = toJSON $ T.intercalate "," (S.toList lbls)
+
+instance FromJSON Labels where
+    parseJSON = withText "label list" $ pure . Labels . S.fromList . T.splitOn ","
+
+data StatusEvent = CloseEvent | ReopenEvent
+                 deriving (Show)
+
+instance ToJSON StatusEvent where
+    toJSON CloseEvent  = "close"
+    toJSON ReopenEvent = "reopen"
 
 newtype IssueIid = IssueIid { unIssueIid :: Int }
                  deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData)
