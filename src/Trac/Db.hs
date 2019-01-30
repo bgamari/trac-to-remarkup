@@ -180,6 +180,7 @@ getTicketChanges conn n mtime = do
           "related"      -> fieldChange $ emptyFieldsUpdate{ticketRelated = mkUpdate (fmap parseTicketSet) old new}
           "cc"           -> fieldChange $ emptyFieldsUpdate{ticketCC = mkUpdate (fmap $ S.fromList . commaSep) old new}
           "owner"        -> fieldChange $ emptyFieldsUpdate{ticketOwner = mkUpdate id old new}
+          "failure"      -> fieldChange $ emptyFieldsUpdate{ticketTypeOfFailure = mkUpdate (fmap toTypeOfFailure) old new}
 
           -- TODO: The other fields
 
