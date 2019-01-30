@@ -66,23 +66,24 @@ data Status = New | Assigned | Patch | Merge | Closed | InfoNeeded | Upstream
             deriving stock (Eq, Show, Generic)
             deriving anyclass (ToJSON)
 
-data Fields f = Fields { ticketType          :: f TicketType
-                       , ticketSummary       :: f Text
-                       , ticketComponent     :: f Text
-                       , ticketPriority      :: f Priority
-                       , ticketVersion       :: f Text
-                       , ticketMilestone     :: f Text
-                       , ticketDescription   :: f Text
-                       , ticketTypeOfFailure :: f TypeOfFailure
-                       , ticketKeywords      :: f (S.Set Text)
-                       , ticketBlockedBy     :: f (S.Set TicketNumber)
-                       , ticketRelated       :: f (S.Set TicketNumber)
-                       , ticketBlocking      :: f (S.Set TicketNumber)
-                       , ticketDifferentials :: f (S.Set Differential)
-                       , ticketTestCase      :: f Text
-                       , ticketStatus        :: f Status
-                       , ticketCC            :: f (S.Set Text)
-                       , ticketOwner         :: f Text
+data Fields f = Fields { ticketType            :: f TicketType
+                       , ticketSummary         :: f Text
+                       , ticketComponent       :: f Text
+                       , ticketPriority        :: f Priority
+                       , ticketVersion         :: f Text
+                       , ticketMilestone       :: f Text
+                       , ticketDescription     :: f Text
+                       , ticketTypeOfFailure   :: f TypeOfFailure
+                       , ticketKeywords        :: f (S.Set Text)
+                       , ticketBlockedBy       :: f (S.Set TicketNumber)
+                       , ticketRelated         :: f (S.Set TicketNumber)
+                       , ticketBlocking        :: f (S.Set TicketNumber)
+                       , ticketDifferentials   :: f (S.Set Differential)
+                       , ticketTestCase        :: f Text
+                       , ticketStatus          :: f Status
+                       , ticketCC              :: f (S.Set Text)
+                       , ticketOwner           :: f Text
+                       , ticketOperatingSystem :: f Text
                        }
 
 isTrivialFieldUpdate :: Fields Update -> Bool
@@ -106,6 +107,7 @@ instance FieldToJSON f => ToJSON (Fields f) where
         , "status" .=? ticketStatus
         , "cc" .=? ticketCC
         , "owner" .=? ticketOwner
+        , "operating_system" .=? ticketOperatingSystem
         ]
       where
         field .=? value
@@ -133,28 +135,30 @@ foldFields Fields{..}=
     <> getConst ticketStatus
     <> getConst ticketCC
     <> getConst ticketOwner
+    <> getConst ticketOperatingSystem
 
 -- | The constraints here are quite arbitrary; they are just what we happen to
 -- need.
 hoistFields :: (forall a. (IsEmpty a, Eq a) => f a -> g a) -> Fields f -> Fields g
 hoistFields f Fields{..} =
-    Fields { ticketType          = f ticketType
-           , ticketSummary       = f ticketSummary
-           , ticketComponent     = f ticketComponent
-           , ticketPriority      = f ticketPriority
-           , ticketVersion       = f ticketVersion
-           , ticketMilestone     = f ticketMilestone
-           , ticketDescription   = f ticketDescription
-           , ticketTypeOfFailure = f ticketTypeOfFailure
-           , ticketKeywords      = f ticketKeywords
-           , ticketBlockedBy     = f ticketBlockedBy
-           , ticketRelated       = f ticketRelated
-           , ticketBlocking      = f ticketBlocking
-           , ticketDifferentials = f ticketDifferentials
-           , ticketTestCase      = f ticketTestCase
-           , ticketStatus        = f ticketStatus
-           , ticketCC            = f ticketCC
-           , ticketOwner         = f ticketOwner
+    Fields { ticketType            = f ticketType
+           , ticketSummary         = f ticketSummary
+           , ticketComponent       = f ticketComponent
+           , ticketPriority        = f ticketPriority
+           , ticketVersion         = f ticketVersion
+           , ticketMilestone       = f ticketMilestone
+           , ticketDescription     = f ticketDescription
+           , ticketTypeOfFailure   = f ticketTypeOfFailure
+           , ticketKeywords        = f ticketKeywords
+           , ticketBlockedBy       = f ticketBlockedBy
+           , ticketRelated         = f ticketRelated
+           , ticketBlocking        = f ticketBlocking
+           , ticketDifferentials   = f ticketDifferentials
+           , ticketTestCase        = f ticketTestCase
+           , ticketStatus          = f ticketStatus
+           , ticketCC              = f ticketCC
+           , ticketOwner           = f ticketOwner
+           , ticketOperatingSystem = f ticketOperatingSystem
            }
 
 emptyFieldsOf :: (forall a. f a) -> Fields f
@@ -164,7 +168,7 @@ emptyFieldsOf x = Fields
     x x x
     x x x
     x x x
-    x x
+    x x x
 
 emptyFields :: Fields Maybe
 emptyFields = emptyFieldsOf Nothing
@@ -192,6 +196,7 @@ collapseFields a b =
            , ticketStatus = ticketStatus a <|> ticketStatus b
            , ticketCC = ticketCC a <|> ticketCC b
            , ticketOwner = ticketOwner a <|> ticketOwner b
+           , ticketOperatingSystem = ticketOperatingSystem a <|> ticketOperatingSystem b
            }
 
 deriving instance Show (Fields Identity)
