@@ -603,10 +603,12 @@ nthMay :: Int -> [a] -> Maybe a
 nthMay n = listToMaybe . drop n
 
 -- | Eliminate metadata changes that are mapped to native GitLab metadata.
+-- Ensures that we don't produce redundant comments containing only JSON metadata.
 filterFieldChanges :: Fields Update -> Fields Update
 filterFieldChanges fields =
     fields { ticketOwner = noUpdate
            , ticketSummary = noUpdate
+           , ticketStatus = noUpdate
            }
   where
     noUpdate = Update Nothing Nothing
