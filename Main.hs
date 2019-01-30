@@ -1086,42 +1086,43 @@ keywordLabels = M.fromList
       , passthru "PatternSynonyms"
       , passthru "Deriving"
       , passthru "Generics"
-      , passthru "PatternMatchWarnings"
+      , passthru "pattern match warnings"
       , passthru "Inlining"
       , passthru "QuantifiedConstraints"
       , passthru "TypeApplications"
-      , passthru "LevityPolymorphism"
+      , passthru "levity polymorphism"
       , passthru "CodeGen"
       , passthru "GADTs"
-      , passthru "JoinPoints"
+      , "JoinPoints" .= "join points"
       , passthru "Typeable"
-      , ("Typeable", "typeable")
+      , ("Typeable", "Typeable")
       , ("ORF", "OverloadedRecordFields")
       , ("hs-boot", "hs-boot")
       , passthru "SpecConstr"
       , passthru "ApplicativeDo"
       , passthru "FunDeps"
-      , passthru "TypedHoles"
+      , "TypedHoles" .= "typed holes"
       , passthru "CSE"
-      , ("TypeCheckerPlugins", "Plugins")
-      , ("deriving-perf", "Deriving" <> "CompilerPerformance")
+      , ("TypeCheckerPlugins", "plugins")
+      , ("deriving-perf", "Deriving" <> "compiler perf")
       , passthru "CUSKs"
       , passthru "PolyKinds"
-      , ("performance", "RuntimePerformance")
-      , ("ci-breakage", "CI-Breakage")
+      , ("performance", "runtime perf")
+      , ("ci-breakage", "CI breakage")
 
-      , ("DWARF", "DebugInformation")
+      , ("DWARF", "debug information")
       , passthru "SafeHaskell"
       , passthru "CustomTypeErrors"
       , passthru "StaticPointers"
       , passthru "Unicode"
-      , ("warnings", "ErrorMessages")
+      , ("warnings", "error messages")
       , passthru "Arrows"
       , passthru "SIMD"
       , passthru "TemplateHaskell"
       ]
   where
     passthru x = (x, mkLabel x)
+    (.=) = (,)
 
 typeOfFailureLabels :: TypeOfFailure -> Labels
 typeOfFailureLabels t =
