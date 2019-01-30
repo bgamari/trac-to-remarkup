@@ -962,7 +962,7 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                         mempty
                         -- [ ("User", changeAuthor tc) -- ]
                         fields'
-                , justWhen (not $ isTrivialFieldUpdate $ changeFields tc)
+                , justWhen (not $ isTrivialFieldUpdate $ filterFieldChanges $ changeFields tc)
                     $ fieldsJSON $ filterFieldChanges $ changeFields tc
                 ]
 
