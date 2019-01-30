@@ -1210,8 +1210,8 @@ fieldsTable extraRows (f@Fields{..})
         , row "Related" $ concatFields $ renderTicketNumbers . toList <$> ticketRelated
         , row "Blocking" $ concatFields $ renderTicketNumbers . toList <$> ticketBlocking
         , row "CC" $ concatFields $ T.intercalate ", " . toList <$> ticketCC
-        -- , row "Operating system" $ concatFields ticketOperatingSystem
-        -- , row "Architecture" $ concatFields ticketArchitecture
+        , row "Operating system" $ concatFields ticketOperatingSystem
+        , row "Architecture" $ concatFields ticketArchitecture
         -- , row "ALL" $ Just . T.pack . show $ f
         ] ++ extraRows
 
