@@ -106,6 +106,7 @@ toTicket conn
     ticketCC <- i . S.fromList . commaSep . fromMaybe "" <$> findOrig conn "cc" mb_cc ticketNumber
     ticketOwner <- i . maybe Unowned toTicketOwner <$> findOrig conn "owner" mb_owner ticketNumber
     ticketOperatingSystem <- i . fromMaybe "" <$> findOrig conn "os" mb_owner ticketNumber
+    ticketArchitecture <- i . fromMaybe "" <$> findOrig conn "architecture" mb_owner ticketNumber
     let ticketFields = Fields {..}
     return Ticket {..}
 
@@ -185,6 +186,7 @@ getTicketChanges conn n mtime = do
           "version"      -> fieldChange $ emptyFieldsUpdate{ticketVersion = mkUpdate id old new}
           "failure"      -> fieldChange $ emptyFieldsUpdate{ticketTypeOfFailure = mkUpdate (fmap toTypeOfFailure) old new}
           "os"           -> fieldChange $ emptyFieldsUpdate{ticketOperatingSystem = mkUpdate id old new}
+          "architecture" -> fieldChange $ emptyFieldsUpdate{ticketArchitecture = mkUpdate id old new}
 
           -- TODO: The other fields
 

@@ -98,6 +98,7 @@ data Fields f = Fields { ticketType            :: f TicketType
                        , ticketCC              :: f (S.Set Text)
                        , ticketOwner           :: f TicketOwner
                        , ticketOperatingSystem :: f Text
+                       , ticketArchitecture    :: f Text
                        }
 
 isTrivialFieldUpdate :: Fields Update -> Bool
@@ -122,6 +123,7 @@ instance FieldToJSON f => ToJSON (Fields f) where
         , "cc" .=? ticketCC
         , "owner" .=? ticketOwner
         , "operating_system" .=? ticketOperatingSystem
+        , "architecture" .=? ticketArchitecture
         ]
       where
         field .=? value
@@ -150,6 +152,7 @@ foldFields Fields{..}=
     <> getConst ticketCC
     <> getConst ticketOwner
     <> getConst ticketOperatingSystem
+    <> getConst ticketArchitecture
 
 -- | The constraints here are quite arbitrary; they are just what we happen to
 -- need.
@@ -173,6 +176,7 @@ hoistFields f Fields{..} =
            , ticketCC              = f ticketCC
            , ticketOwner           = f ticketOwner
            , ticketOperatingSystem = f ticketOperatingSystem
+           , ticketArchitecture    = f ticketArchitecture
            }
 
 emptyFieldsOf :: (forall a. f a) -> Fields f
@@ -183,6 +187,7 @@ emptyFieldsOf x = Fields
     x x x
     x x x
     x x x
+    x
 
 emptyFields :: Fields Maybe
 emptyFields = emptyFieldsOf Nothing
@@ -211,6 +216,7 @@ collapseFields a b =
            , ticketCC = ticketCC a <|> ticketCC b
            , ticketOwner = ticketOwner a <|> ticketOwner b
            , ticketOperatingSystem = ticketOperatingSystem a <|> ticketOperatingSystem b
+           , ticketArchitecture = ticketArchitecture a <|> ticketArchitecture b
            }
 
 deriving instance Show (Fields Identity)
