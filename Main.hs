@@ -602,6 +602,15 @@ tracToMarkdown logger commentCache (TicketNumber n) src =
 nthMay :: Int -> [a] -> Maybe a
 nthMay n = listToMaybe . drop n
 
+-- | Eliminate metadata changes that are mapped to native GitLab metadata.
+filterFieldChanges :: Fields Update -> Fields Update
+filterFieldChanges fields =
+    fields { ticketOwner = noUpdate
+           , ticketSummary = noUpdate
+           }
+  where
+    noUpdate = Update Nothing Nothing
+
 createTicket :: Logger
              -> MilestoneMap
              -> UserIdOracle
@@ -954,7 +963,7 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                         -- [ ("User", changeAuthor tc) -- ]
                         fields'
                 , justWhen (not $ isTrivialFieldUpdate $ changeFields tc)
-                    $ fieldsJSON (changeFields tc)
+                    $ fieldsJSON $ filterFieldChanges $ changeFields tc
                 ]
 
         writeLog logger "NOTE" $ show body
