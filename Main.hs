@@ -882,123 +882,34 @@ createTicketChanges :: Logger
 createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment iid tc = do
     writeLog logger "TICKET-CHANGE" . show $ tc
 
+    handleIssueRelations
+    mhash <- handleCommitComments
+
     -- Here we drop changes to CC field that we accounted for by way of
     -- subscription or unsubscription.
     fields' <- fromMaybe (changeFields tc)
                <$> withFieldDiff (ticketCC $ changeFields tc) handleSubscriptions
 
+    meid <- handleGitLabMetadata fields'
+
     let trivialUpdate = isTrivialFieldUpdate fields'
         trivialComment = isNothing (changeComment tc)
         trivial = trivialComment && trivialUpdate
-    when (not trivial) $ createNote fields'
+    mcinId <- if trivial
+        then return Nothing
+        else createNote fields'
+
+
+    let mid = fromMaybe MissingCommentRef $ mcinId <|> meid <|> mhash
+    updateCommentCache mid
   where
     logger = liftLogger logger'
     t = case iid of IssueIid n -> TicketNumber $ fromIntegral n
 
-    -- Translate CC field changes to subscribe/unsubscribe events.
-    handleSubscriptions :: S.Set Username -> S.Set Username -> ClientM (Fields Update)
-    handleSubscriptions toSubscribe toUnsubscribe = do
-      writeLog logger "SUBSCRIBE" $ (show toSubscribe)
-      writeLog logger "UNSUBSCRIBE" $ (show toUnsubscribe)
 
-      let lookupUsers :: S.Set Username -> ClientM (M.Map Username UserId)
-          lookupUsers users =
-              M.mapMaybe id <$> mapM (findUser userIdOracle) (M.fromSet id users)
-      toSubscribe' <- lookupUsers toSubscribe
-      toUnsubscribe' <- lookupUsers toUnsubscribe
-
-      forM_ toSubscribe' $ \uid -> do
-        writeLog logger "SUBSCRIBE-USER" $ show uid
-        result <- subscribeIssue
-                    logger'
-                    gitlabToken
-                    (Just uid)
-                    project
-                    iid
-        writeLog logger "SUBSCRIBED" $ show result
-
-      forM_ toUnsubscribe' $ \uid -> do
-        writeLog logger "UNSUBSCRIBE-USER" $ show uid
-        result <- unsubscribeIssue
-                    logger'
-                    gitlabToken
-                    (Just uid)
-                    project
-                    iid
-        writeLog logger "UNSUBSCRIBED" $ show result
-
-      let oldCC = ticketCC (changeFields tc)
-          -- Remove the changes we've made via subscription to avoid producing
-          -- unnecessary metadata tables
-          newCC = oldCC { newValue = fmap (\s -> (s `S.union` M.keysSet toSubscribe') `S.difference` M.keysSet toUnsubscribe') (newValue oldCC) }
-      return $ (changeFields tc) { ticketCC = newCC }
-
-    -- Figure out the comment number. We have to do this by counting how many
-    -- comments there are on this ticket so far, because Trac doesn't actually
-    -- store comment numbers.
-    findCommentNumber :: ClientM Int
-    findCommentNumber = liftIO $ do
-      items <- M.lookup (unIssueIid iid) <$> readMVar commentCache
-      case items of
-        Nothing -> return 1
-        Just xs -> return (length xs + 1)
-
-    createNote :: Fields Update  -- fields with subscriptions removed
-               -> ClientM ()
-    createNote fields' = do
+    handleGitLabMetadata :: Fields Update -> ClientM (Maybe CommentRef)
+    handleGitLabMetadata fields' = do
         authorUid <- findOrCreateUser userIdOracle $ changeAuthor tc
-        commentNumber <- findCommentNumber
-
-        -- Compose a note body. In some cases, we don't want to create a note,
-        -- because the information we could put in there isn't useful, or because
-        -- we already store it elsewhere. In those cases, we leave the body empty,
-        -- and check for that later.
-        mrawBody <- liftIO $
-                      maybe
-                          (return Nothing)
-                          (fmap Just . tracToMarkdown logger' commentCache t)
-                          (changeComment tc)
-        let body = T.unlines . catMaybes $
-                [ mrawBody >>= justWhen (not . isCommitComment $ tc)
-                , justWhen (not $ isTrivialFieldUpdate fields')
-                    $ fieldsTable
-                        mempty
-                        -- [ ("User", changeAuthor tc) -- ]
-                        fields'
-                , justWhen (not $ isTrivialFieldUpdate $ filterFieldChanges $ changeFields tc)
-                    $ fieldsJSON $ filterFieldChanges $ changeFields tc
-                ]
-
-        writeLog logger "NOTE" $ show body
-        let discard = T.all isSpace body
-        mcinId <- if discard
-                      then do
-                        writeLog logger "COMMENT-SKIPPED" ""
-                        return Nothing
-                      else do
-                        let note = CreateIssueNote { cinBody = body
-                                                   , cinCreatedAt = Just $ changeTime tc
-                                                   }
-                        cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
-                        writeLog logger "NOTE-CREATED" $ show commentNumber ++ " -> " ++ show cinResp
-                        return (Just . NoteRef . inrId $ cinResp)
-
-        -- Translate issue link lists to link/unlink events.
-        withFieldDiff (ticketRelated $ changeFields tc) $ \toLink toUnlink -> do
-          forM_ toLink $ \(TicketNumber n) -> do
-            let otherIid = IssueIid . fromIntegral $ n
-            writeLog logger "LINK-ISSUES" $ show iid ++ " <-> " ++ show otherIid
-            linkResult <- createIssueLink
-              logger'
-              gitlabToken
-              (Just authorUid)
-              project
-              iid
-              (CreateIssueLink project iid project otherIid)
-            writeLog logger "LINKED" $ show linkResult
-
-          writeLog logger "LINK" (show toLink)
-          writeLog logger "UNLINK" (show toUnlink)
 
         -- Field updates. Figure out which fields to update.
         let fields = hoistFields newValue fields'
@@ -1051,31 +962,143 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                     meid <- fmap inrId <$> getNewestIssueNote gitlabToken (Just authorUid) project iid
                     writeLog logger "CREATE-ISSUE-EDIT" $ show meid
                     return $ NoteRef <$> meid
+        return meid
 
-        -- Handle commit comments. A commit comment is a comment that has been
-        -- added automatically when someone mentioned the ticket number in a
-        -- commit. Commit comments in Trac replicate the entire commit message;
-        -- this is useless to us, because we already have the commit in gitlab, so
-        -- we will not create an actual note, but rather just remember which commit
-        -- this points to, and turn Trac links to this comment into gitlab links
-        -- directly to the commit.
-        mhash <- if (isCommitComment tc)
-                  then do
-                    writeLog logger "COMMIT-COMMENT" $ (fromMaybe "(no comment)" $ show <$> changeComment tc)
-                    let mcommitInfo = extractCommitHash =<< changeComment tc
-                    writeLog logger "COMMIT-COMMENT" $ fromMaybe "???" (fst <$> mcommitInfo)
-                    return $ do
-                      (hash, mrepo) <- mcommitInfo
-                      return $ CommitRef hash mrepo
-                  else
-                    return Nothing
+    -- Handle commit comments. A commit comment is a comment that has been
+    -- added automatically when someone mentioned the ticket number in a
+    -- commit. Commit comments in Trac replicate the entire commit message;
+    -- this is useless to us, because we already have the commit in gitlab, so
+    -- we will not create an actual note, but rather just remember which commit
+    -- this points to, and turn Trac links to this comment into gitlab links
+    -- directly to the commit.
+    handleCommitComments :: ClientM (Maybe CommentRef)
+    handleCommitComments
+       | not $ isCommitComment tc = return Nothing
+       | otherwise = do
+          writeLog logger "COMMIT-COMMENT" $ (fromMaybe "(no comment)" $ show <$> changeComment tc)
+          let mcommitInfo = extractCommitHash =<< changeComment tc
+          writeLog logger "COMMIT-COMMENT" $ fromMaybe "???" (fst <$> mcommitInfo)
+          return $ do
+            (hash, mrepo) <- mcommitInfo
+            return $ CommitRef hash mrepo
 
-        -- Update our comment cache. Depending on what we did above, we pick an
-        -- apppropriate note reference (pointing to a Note, a Commit, or marking
-        -- the comment as missing), and append it to both the in-memory store and
-        -- the state file.
+
+    -- Translate issue link lists to link/unlink events.
+    handleIssueRelations :: ClientM ()
+    handleIssueRelations = do
+        authorUid <- findOrCreateUser userIdOracle $ changeAuthor tc
+        void $ withFieldDiff (ticketRelated $ changeFields tc) $ \toLink toUnlink -> do
+          forM_ toLink $ \(TicketNumber n) -> do
+            let otherIid = IssueIid . fromIntegral $ n
+            writeLog logger "LINK-ISSUES" $ show iid ++ " <-> " ++ show otherIid
+            linkResult <- createIssueLink
+              logger'
+              gitlabToken
+              (Just authorUid)
+              project
+              iid
+              (CreateIssueLink project iid project otherIid)
+            writeLog logger "LINKED" $ show linkResult
+
+          writeLog logger "LINK" (show toLink)
+          writeLog logger "UNLINK" (show toUnlink)
+
+    -- Translate CC field changes to subscribe/unsubscribe events.
+    handleSubscriptions :: S.Set Username -> S.Set Username -> ClientM (Fields Update)
+    handleSubscriptions toSubscribe toUnsubscribe = do
+      writeLog logger "SUBSCRIBE" $ (show toSubscribe)
+      writeLog logger "UNSUBSCRIBE" $ (show toUnsubscribe)
+
+      let lookupUsers :: S.Set Username -> ClientM (M.Map Username UserId)
+          lookupUsers users =
+              M.mapMaybe id <$> mapM (findUser userIdOracle) (M.fromSet id users)
+      toSubscribe' <- lookupUsers toSubscribe
+      toUnsubscribe' <- lookupUsers toUnsubscribe
+
+      forM_ toSubscribe' $ \uid -> do
+        writeLog logger "SUBSCRIBE-USER" $ show uid
+        result <- subscribeIssue
+                    logger'
+                    gitlabToken
+                    (Just uid)
+                    project
+                    iid
+        writeLog logger "SUBSCRIBED" $ show result
+
+      forM_ toUnsubscribe' $ \uid -> do
+        writeLog logger "UNSUBSCRIBE-USER" $ show uid
+        result <- unsubscribeIssue
+                    logger'
+                    gitlabToken
+                    (Just uid)
+                    project
+                    iid
+        writeLog logger "UNSUBSCRIBED" $ show result
+
+      let oldCC = ticketCC (changeFields tc)
+          -- Remove the changes we've made via subscription to avoid producing
+          -- unnecessary metadata tables
+          newCC = oldCC { newValue = fmap (\s -> (s `S.union` M.keysSet toSubscribe') `S.difference` M.keysSet toUnsubscribe') (newValue oldCC) }
+      return $ (changeFields tc) { ticketCC = newCC }
+
+    -- Figure out the comment number. We have to do this by counting how many
+    -- comments there are on this ticket so far, because Trac doesn't actually
+    -- store comment numbers.
+    findCommentNumber :: ClientM Int
+    findCommentNumber = liftIO $ do
+      items <- M.lookup (unIssueIid iid) <$> readMVar commentCache
+      case items of
+        Nothing -> return 1
+        Just xs -> return (length xs + 1)
+
+    createNote :: Fields Update  -- fields with subscriptions removed
+               -> ClientM (Maybe CommentRef)
+    createNote fields' = do
+        authorUid <- findOrCreateUser userIdOracle $ changeAuthor tc
+        commentNumber <- findCommentNumber
+
+        -- Compose a note body. In some cases, we don't want to create a note,
+        -- because the information we could put in there isn't useful, or because
+        -- we already store it elsewhere. In those cases, we leave the body empty,
+        -- and check for that later.
+        mrawBody <- liftIO $
+                      maybe
+                          (return Nothing)
+                          (fmap Just . tracToMarkdown logger' commentCache t)
+                          (changeComment tc)
+        let body = T.unlines . catMaybes $
+                [ mrawBody >>= justWhen (not . isCommitComment $ tc)
+                , justWhen (not $ isTrivialFieldUpdate fields')
+                    $ fieldsTable
+                        mempty
+                        -- [ ("User", changeAuthor tc) -- ]
+                        fields'
+                , justWhen (not $ isTrivialFieldUpdate $ filterFieldChanges $ changeFields tc)
+                    $ fieldsJSON $ filterFieldChanges $ changeFields tc
+                ]
+
+        writeLog logger "NOTE" $ show body
+        let discard = T.all isSpace body
+        mcinId <- if discard
+                      then do
+                        writeLog logger "COMMENT-SKIPPED" ""
+                        return Nothing
+                      else do
+                        let note = CreateIssueNote { cinBody = body
+                                                   , cinCreatedAt = Just $ changeTime tc
+                                                   }
+                        cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
+                        writeLog logger "NOTE-CREATED" $ show commentNumber ++ " -> " ++ show cinResp
+                        return (Just . NoteRef . inrId $ cinResp)
+        return mcinId
+
+    -- Update our comment cache. Depending on what we did above, we pick an
+    -- apppropriate note reference (pointing to a Note, a Commit, or marking
+    -- the comment as missing), and append it to both the in-memory store and
+    -- the state file.
+    updateCommentCache :: CommentRef -> ClientM ()
+    updateCommentCache mid =
         (liftIO $ do
-          let mid = fromMaybe MissingCommentRef $ mcinId <|> meid <|> mhash
           modifyMVar_ commentCache $
             return .
             M.insertWith (flip (++)) (unIssueIid iid) [mid]
