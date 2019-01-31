@@ -6,6 +6,7 @@
 
 module GitLab.Common where
 
+import Data.Foldable (toList)
 import Control.Monad
 import qualified Data.Text as T
 import qualified Data.Set as S
@@ -59,7 +60,7 @@ instance ToJSON Labels where
     toJSON (Labels lbls) = toJSON $ T.intercalate "," (S.toList lbls)
 
 instance FromJSON Labels where
-    parseJSON = withText "label list" $ pure . Labels . S.fromList . T.splitOn ","
+    parseJSON o = Labels . S.fromList <$> parseJSON o
 
 data StatusEvent = CloseEvent | ReopenEvent
                  deriving (Show)
