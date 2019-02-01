@@ -94,6 +94,7 @@ library gitlab-servant
 executable trac-import
   main-is:             Main.hs
   other-modules:       Settings
+                       UserLookup
   ghc-options:         -threaded
   build-depends: base
                , logging
