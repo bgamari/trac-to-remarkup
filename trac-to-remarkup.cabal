@@ -97,7 +97,9 @@ executable trac-import
                        UserLookup
                        TicketImport
                        MilestoneImport
+                       WikiImport
                        ImportState
+                       Utils
   ghc-options:         -threaded
   build-depends: base
                , logging
