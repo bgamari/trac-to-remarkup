@@ -23,10 +23,10 @@ openStateFile stateFile = do
         then S.fromList . map read . lines <$> readFile stateFile
         else return mempty
 
-    stateFile <- openFile stateFile AppendMode
-    hSetBuffering stateFile LineBuffering
+    stateHdl <- openFile stateFile AppendMode
+    hSetBuffering stateHdl LineBuffering
     let finishItem :: a -> IO ()
-        finishItem = hPutStrLn stateFile . show
+        finishItem = hPutStrLn stateHdl . show
     return (finished, finishItem)
 
 openCommentCacheFile :: Logger -> FilePath -> IO (CommentCacheVar, StoreComment)

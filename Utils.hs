@@ -5,7 +5,7 @@ module Utils
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 import Control.Concurrent
-import Control.Concurrent.Async.Lifted (mapConcurrently_, race_, race)
+import Control.Concurrent.Async.Lifted (race)
 
 withTimeout :: (MonadIO m, MonadBaseControl IO m) => Int -> m a -> m (Maybe a)
 withTimeout delayMS action =

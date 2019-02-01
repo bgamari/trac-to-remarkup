@@ -10,7 +10,6 @@ import Control.Exception.Lifted (bracket)
 import Data.Char
 import Data.Maybe
 import Data.Time
-import Data.Time.Format
 import Data.Void
 import Control.Concurrent
 import Text.Printf
@@ -35,7 +34,7 @@ import Utils
 import Trac.Db as Trac
 import Trac.Db.Types as Trac
 import qualified Trac.Scraper as Scraper
-import Trac.Convert (LookupComment, tracWikiBaseNameToGitlab)
+import Trac.Convert (tracWikiBaseNameToGitlab)
 import GitLab.Common
 import GitLab.Users
 import Logging
@@ -196,9 +195,9 @@ dealWithHttpError logger n action = action `catch` h
         ) = do
       writeLog logger "HTTP-ERROR" $ displayException e
       return Nothing
-    h e@(HttpExceptionRequest _ ConnectionFailure {}) =
+    h (HttpExceptionRequest _ ConnectionFailure {}) =
       retry
-    h e@(HttpExceptionRequest _ ResponseTimeout {}) =
+    h (HttpExceptionRequest _ ResponseTimeout {}) =
       retry
 
     h e = do

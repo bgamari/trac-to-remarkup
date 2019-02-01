@@ -12,7 +12,6 @@ import Control.Concurrent
 import Control.Monad
 import Data.Char
 import Data.Maybe
-import Data.Semigroup
 import Data.String
 import Control.Monad.IO.Class
 import Control.Monad.Error.Class
@@ -31,17 +30,10 @@ import Servant.Client
 
 import GitLab.Tickets
 import GitLab.Common
-import GitLab.Project
-import GitLab.UploadFile
-import GitLab.Users
-import qualified Trac.Web
-import Trac.Db as Trac
 import Trac.Db.Types as Trac
-import Trac.Convert (LookupComment, tracWikiBaseNameToGitlab)
 import Trac.Writer (mkDifferentialLink)
 import qualified Trac.Convert
 import qualified Trac.Parser as Trac
-import qualified Trac.Scraper as Scraper
 import UserLookup
 import MilestoneImport (MilestoneMap)
 import Logging
@@ -450,7 +442,7 @@ fieldsJSON fields =
 
 fieldsTable :: forall f. (Functor f, ConcatFields f, Show (Fields f))
             => [(Text, Text)] -> Fields f -> T.Text
-fieldsTable extraRows (f@Fields{..})
+fieldsTable extraRows (Fields{..})
   | null rows = ""
   | otherwise = T.unlines $
     [ "<details><summary>Trac metadata</summary>"
@@ -459,10 +451,6 @@ fieldsTable extraRows (f@Fields{..})
     , "</details>"
     ]
   where
-    unless :: (a -> Bool) -> Maybe a -> Maybe a
-    unless p (Just x) | p x = Nothing
-    unless _ x = x
-
     row :: Text -> Maybe Text -> Maybe (Text, Text)
     row name val = fmap (\v -> (name,v)) val
 
@@ -488,9 +476,6 @@ fieldsTable extraRows (f@Fields{..})
         , row "Architecture" $ concatFields ticketArchitecture
         -- , row "ALL" $ Just . T.pack . show $ f
         ] ++ extraRows
-
-    formatTicketNumber :: TicketNumber -> Text
-    formatTicketNumber (TicketNumber n) = "#" <> T.pack (show n)
 
     header :: (Text, Text)
     header = ("Trac field", "Value")
@@ -558,8 +543,7 @@ extractCommitHash t = do
     extractFromInline _ =
       Nothing
 
-isHexChar c = isDigit c || (c `elem` ['a'..'f'])
-
+ticketNumberToIssueIid :: TicketNumber -> IssueIid
 ticketNumberToIssueIid (TicketNumber n) =
   IssueIid $ fromIntegral n
 

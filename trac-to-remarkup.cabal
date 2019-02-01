@@ -100,7 +100,7 @@ executable trac-import
                        WikiImport
                        ImportState
                        Utils
-  ghc-options:         -threaded
+  ghc-options:         -threaded -Wall
   build-depends: base
                , logging
 

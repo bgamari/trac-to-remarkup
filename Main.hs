@@ -9,52 +9,23 @@
 module Main where
 
 import Data.Char
-import Control.Applicative
 import Control.Monad
-import Control.Monad.Catch hiding (bracket)
+import Control.Monad.Catch hiding (bracket, onError)
 import Control.Monad.IO.Class
 import Control.Monad.Error.Class
-import Control.Monad.Trans.Class
-import Control.Monad.Reader.Class
-import Control.Monad.Trans.Maybe
-import Control.Monad.Trans.Control
-import Control.Concurrent
-import Control.Exception.Lifted (bracket)
-import Control.Concurrent.Async.Lifted (mapConcurrently_, race_, race)
-import Data.Default (def)
-import Data.Foldable
-import Data.Function
-import Data.Functor.Identity
 import Data.List
-import Data.String
 import Data.Maybe
 import qualified Data.Set as S
-import qualified Data.Map.Strict as M
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Lazy as TL
-import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as TE
-import System.IO
-import System.FilePath
-import System.Directory
 import System.Environment
-import Debug.Trace
-import Text.Printf (printf)
-import Text.Megaparsec.Error (ParseError, parseErrorPretty)
-import Network.HTTP.Client.Internal as HTTP (HttpException (..), HttpExceptionContent (..), Response (..))
 
 import Database.PostgreSQL.Simple
 import Network.HTTP.Client.TLS as TLS
-import Network.Connection (TLSSettings(..))
-import Network.HTTP.Types.Status
 import Servant.Client
-import Data.Aeson.Text as Aeson
 
-import qualified Git
-import Git (git, git_, GitException)
 import Logging (LoggerM (..), Logger, makeStdoutLogger, writeLog, liftLogger)
 import qualified Logging
 
@@ -63,15 +34,11 @@ import GitLab.Tickets
 import GitLab.Common
 import GitLab.Project
 import GitLab.UploadFile
-import GitLab.Users
 import qualified Trac.Web
 import Trac.Db as Trac
 import Trac.Db.Types as Trac
-import Trac.Convert (LookupComment, tracWikiBaseNameToGitlab)
 import qualified Trac.Scraper as Scraper
-import Trac.Writer (mkDifferentialLink)
 import qualified Trac.Convert
-import qualified Trac.Parser as Trac
 import Settings
 import UserLookup
 import TicketImport
@@ -79,6 +46,7 @@ import MilestoneImport
 import ImportState
 import WikiImport
 
+gitlabApiBaseUrl :: BaseUrl
 gitlabApiBaseUrl =
   gitlabBaseUrl { baseUrlPath = "api/v4" }
 
@@ -190,7 +158,7 @@ main = do
         action `catch` (\(err :: SomeException) -> writeLog logger "EXCEPTION" (displayException err))
 
 dummyGetCommentId :: Int -> Int -> IO CommentRef
-dummyGetCommentId t c = pure MissingCommentRef
+dummyGetCommentId _t _c = pure MissingCommentRef
 
 divide :: Int -> [a] -> [[a]]
 divide n xs = map f [0..n-1]
@@ -202,7 +170,6 @@ makeAttachment :: Logger -> UserIdOracle -> Attachment -> ClientM ()
 makeAttachment logger userIdOracle (Attachment{..})
   | TicketAttachment ticketNum <- aResource = do
         liftIO $ writeLog logger "ATTACHMENT" $ show (aResource, aFilename)
-        mgr <- manager <$> ask
         content <- liftIO $ Trac.Web.fetchTicketAttachment tracBaseUrl ticketNum aFilename
         uid <- findOrCreateUser userIdOracle aAuthor
         msg <- if ".hs" `T.isSuffixOf` aFilename && BS.length content < 30000
@@ -231,7 +198,7 @@ makeAttachment logger userIdOracle (Attachment{..})
             , ""
             , aDescription
             ]
-    mkAttachment uid ticketNum content = do
+    mkAttachment uid _ticketNum content = do
         url <- GitLab.UploadFile.uploadFile gitlabToken (Just uid) project aFilename content
         return $ T.unlines
             [ "Attached file `" <> aFilename <> "` ([download](" <> url <> "))."

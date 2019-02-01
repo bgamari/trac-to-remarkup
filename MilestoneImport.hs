@@ -8,8 +8,7 @@ module MilestoneImport
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Error.Class
-import Control.Monad.Catch hiding (bracket)
-import Data.String
+import Control.Monad.Catch hiding (bracket, onError)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
 
@@ -19,7 +18,6 @@ import Database.PostgreSQL.Simple
 import GitLab.Common
 import GitLab.Tickets
 import Trac.Db as Trac
-import Trac.Db.Types as Trac
 import Logging
 import Settings
 

@@ -25,12 +25,10 @@ import Control.Monad.Catch hiding (bracket)
 import Servant.Client
 import Database.PostgreSQL.Simple
 
-import Logging (LoggerM (..), Logger, makeStdoutLogger, writeLog, liftLogger)
+import Logging (Logger, writeLog)
 import GitLab.Common
-import GitLab.Project
 import GitLab.Users
 import Trac.Db as Trac
-import Trac.Db.Types as Trac
 import Settings
 
 type Username = Text
@@ -81,7 +79,7 @@ sanitizeUsername n
     fixChars c
       | isLetter c = c
       | isDigit c  = c
-    fixChars c = '_'
+    fixChars _ = '_'
 
 data UserIdOracle = UserIdOracle { findOrCreateUser :: Username -> ClientM UserId
                                  , findUser :: Username -> ClientM (Maybe UserId)
