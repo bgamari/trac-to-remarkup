@@ -10,7 +10,8 @@ module Logging
 where
 
 import System.IO
-import Control.Concurrent.Lifted
+import Control.Concurrent.Async.Lifted
+import Control.Concurrent.STM
 import Control.Monad
 import Control.Monad.Base
 import Control.Monad.Trans.Control
@@ -88,18 +89,20 @@ withContextM c =
 makeStdoutLogger :: forall m. (MonadBase IO m, MonadBaseControl IO m)
                  => m (LoggerM m)
 makeStdoutLogger = do
-  logChan <- newChan
-  contextVar <- newMVar []
-  let writeLogRaw msg = writeChan logChan msg
-      getContext =
-        readMVar contextVar
-      pushContext c = do
-        cs <- takeMVar contextVar
-        putMVar contextVar (c:cs)
-      popContext = do
-        cs <- takeMVar contextVar
-        putMVar contextVar (drop 1 cs)
+  logChan <- liftBase newTChanIO
+  contextVar <- liftBase $ newTVarIO []
+  let writeLogRaw msg = 
+        liftBase $ atomically $ writeTChan logChan msg
+      getContext = 
+        liftBase $ atomically $ readTVar contextVar
+      pushContext c = liftBase $ atomically $ do
+        cs <- readTVar contextVar
+        writeTVar contextVar (c:cs)
+      popContext = liftBase $ atomically $ do
+        cs <- readTVar contextVar
+        writeTVar contextVar (drop 1 cs)
         pure $ listToMaybe cs
-  fork . forever $ do
-    readChan logChan >>= liftBase . mapM putStrLn
+  logWorker <- liftBase . async . forever $ do
+    atomically (readTChan logChan) >>= liftBase . mapM putStrLn
+  link logWorker
   return (Logger {..} :: LoggerM m)

@@ -57,7 +57,9 @@ library
 library logging
   exposed-modules: Logging
   build-depends: base >=4.9 && <4.13
+               , lifted-async
                , lifted-base
+               , stm
                , monad-control
                , mtl
                , transformers-base
