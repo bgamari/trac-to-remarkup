@@ -6,7 +6,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Main where
+module Main (main) where
 
 import Data.Char
 import Control.Monad
@@ -16,10 +16,7 @@ import Control.Monad.Error.Class
 import Data.List
 import Data.Maybe
 import qualified Data.Set as S
-import qualified Data.ByteString as BS
-import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
 import System.Environment
 
 import Database.PostgreSQL.Simple
@@ -30,11 +27,7 @@ import Logging (LoggerM (..), Logger, makeStdoutLogger, writeLog, liftLogger)
 import qualified Logging
 
 import Utils
-import GitLab.Tickets
 import GitLab.Common
-import GitLab.Project
-import GitLab.UploadFile
-import qualified Trac.Web
 import Trac.Db as Trac
 import Trac.Db.Types as Trac
 import qualified Trac.Scraper as Scraper
@@ -45,13 +38,11 @@ import TicketImport
 import MilestoneImport
 import ImportState
 import WikiImport
+import AttachmentImport
 
 gitlabApiBaseUrl :: BaseUrl
 gitlabApiBaseUrl =
   gitlabBaseUrl { baseUrlPath = "api/v4" }
-
-tee :: Monad m => (a -> m ()) -> a -> m a
-tee f x = f x >> pure x
 
 main :: IO ()
 main = do
@@ -159,76 +150,6 @@ main = do
 
 dummyGetCommentId :: Int -> Int -> IO CommentRef
 dummyGetCommentId _t _c = pure MissingCommentRef
-
-divide :: Int -> [a] -> [[a]]
-divide n xs = map f [0..n-1]
-  where
-    f i = mapMaybe (\(j,x) -> if j `mod` n == i then Just x else Nothing)
-          $ zip [0..] xs
-
-makeAttachment :: Logger -> UserIdOracle -> Attachment -> ClientM ()
-makeAttachment logger userIdOracle (Attachment{..})
-  | TicketAttachment ticketNum <- aResource = do
-        liftIO $ writeLog logger "ATTACHMENT" $ show (aResource, aFilename)
-        content <- liftIO $ Trac.Web.fetchTicketAttachment tracBaseUrl ticketNum aFilename
-        uid <- findOrCreateUser userIdOracle aAuthor
-        msg <- if ".hs" `T.isSuffixOf` aFilename && BS.length content < 30000
-            then mkSnippet uid ticketNum content
-            else mkAttachment uid ticketNum content
-        mkComment uid (IssueIid $ fromIntegral $ getTicketNumber ticketNum) msg
-  | otherwise = return ()
-  where
-    mkSnippet, mkAttachment :: UserId -> TicketNumber -> BS.ByteString -> ClientM Text
-    mkSnippet uid ticketNum content = do
-        let title = T.unwords [ aFilename, "from ticket"
-                              , "#" <> T.pack (show $ getTicketNumber ticketNum)
-                              ]
-            cs = CreateSnippet { csTitle = title
-                               , csFileName = aFilename
-                               , csDescription = Just $ T.unlines [ aDescription
-                                                                  , ""
-                                                                  , title
-                                                                  ]
-                               , csCode = TE.decodeUtf8 content
-                               , csVisibility = Public
-                               }
-        sid <- GitLab.Project.createSnippet gitlabToken (Just uid) project cs
-        return $ T.unlines
-            [ "Attached file `" <> aFilename <> "` ($" <> T.pack (show $ getSnippetId sid) <> ")."
-            , ""
-            , aDescription
-            ]
-    mkAttachment uid _ticketNum content = do
-        url <- GitLab.UploadFile.uploadFile gitlabToken (Just uid) project aFilename content
-        return $ T.unlines
-            [ "Attached file `" <> aFilename <> "` ([download](" <> url <> "))."
-            , ""
-            , aDescription
-            ]
-
-    mkComment :: UserId -> IssueIid -> Text -> ClientM ()
-    mkComment uid iid msg = do
-        let note = CreateIssueNote { cinBody = msg
-                                   , cinCreatedAt = Just aTime
-                                   }
-        void $ createIssueNote gitlabToken (Just uid) project iid note
-
-makeAttachments :: Logger -> Connection -> UserIdOracle -> ClientM ()
-makeAttachments logger conn userIdOracle = do
-    attachments <- liftIO $ getAttachments conn
-    (finishedAttachments, finishAttachment) <-
-        liftIO $ openStateFile attachmentStateFile
-    let makeAttachment' a
-          | aIdent `S.member` finishedAttachments = return ()
-          | otherwise = handleAll onError $ flip catchError onError $ do
-            makeAttachment logger userIdOracle a
-            liftIO $ finishAttachment aIdent
-          where
-            aIdent = (aResource a, aFilename a, aTime a)
-            onError :: (MonadIO m, Show a) => a -> m ()
-            onError err =
-                liftIO $ writeLog logger "ERROR" $ "Failed to create attachment " ++ show a ++ ": " ++ show err
-    mapM_ makeAttachment' $ attachments
 
 makeMutations :: Logger
               -> Connection

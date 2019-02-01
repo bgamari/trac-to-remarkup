@@ -98,6 +98,7 @@ executable trac-import
                        TicketImport
                        MilestoneImport
                        WikiImport
+                       AttachmentImport
                        ImportState
                        Utils
   ghc-options:         -threaded -Wall
