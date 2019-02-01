@@ -95,7 +95,7 @@ findUserByUsername tok username = do
     return $ case res of
                [] -> Nothing
                [user] -> Just user
-               _ -> error $ "Multiple users with id "<>show username
+               _ -> error $ "Multiple users with id "<>show username<>": "<>show res
 
 ----------------------------------------------------------------------
 -- findUserByEmail
@@ -112,7 +112,7 @@ findUserByEmail tok email = do
     return $ case res of
                [] -> Nothing
                [user] -> Just user
-               _ -> error $ "Multiple users with email "<>show email
+               _ -> error $ "Multiple users with email "<>show email<>": "<>show res
 
 findUsersByEmail :: AccessToken -> Text -> ClientM [User]
 findUsersByEmail tok email = do
