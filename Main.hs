@@ -65,7 +65,7 @@ main = do
         scrapeUrls = filter (not . all isDigit)
                    . filter (not . isPrefixOf "-")
                    $ args
-    conn <- connectPostgreSQL dsn
+    conn <- connectPostgreSQL tracDsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
     userIdOracle <- mkUserIdOracle logger conn env

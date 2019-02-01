@@ -28,9 +28,9 @@ gitlabToken :: AccessToken
 -- | PostgreSQL (libpq) connection string.
 -- Use empty DSN to guess the right connection settings, or pass a PostgreSQL
 -- DSN explicitly
-dsn :: ByteString
--- dsn = ""
--- dsn = "dbname=trac_ghc"
+tracDsn :: ByteString
+-- tracDsn = ""
+-- tracDsn = "dbname=trac_ghc"
 
 -- | Base URL for the Trac instance that holds the original data.
 tracBaseUrl :: BaseUrl
