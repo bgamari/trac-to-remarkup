@@ -254,6 +254,7 @@ toStatus t = case t of
     "infoneeded" -> InfoNeeded
     "upstream"   -> Upstream
     "reopened"   -> New
+    "invalid"    -> Invalid
     _            -> error $ "unknown status: " ++ show t
 
 toPriority :: Text -> Priority

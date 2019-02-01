@@ -76,7 +76,7 @@ data Priority = PrioLowest | PrioLow | PrioNormal | PrioHigh | PrioHighest
               deriving stock (Eq, Show, Generic)
               deriving anyclass (ToJSON)
 
-data Status = New | Assigned | Patch | Merge | Closed | InfoNeeded | Upstream
+data Status = New | Assigned | Patch | Merge | Closed | InfoNeeded | Upstream | Invalid
             deriving stock (Eq, Show, Generic)
             deriving anyclass (ToJSON)
 
