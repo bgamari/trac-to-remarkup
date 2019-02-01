@@ -95,6 +95,9 @@ executable trac-import
   main-is:             Main.hs
   other-modules:       Settings
                        UserLookup
+                       TicketImport
+                       MilestoneImport
+                       ImportState
   ghc-options:         -threaded
   build-depends: base
                , logging
