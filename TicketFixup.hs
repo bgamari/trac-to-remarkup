@@ -17,12 +17,12 @@ fixupLastUpdated logger = do
     gitlabConn <- connectPostgreSQL gitlabDsn
     tracConn <- connectPostgreSQL tracDsn
     tickets <- getTickets tracConn
-    updated <- executeMany gitlabConn 
-      [sql|UPDATE issues 
-           SET issues.updated_at = upd.time
+    updated <- executeMany gitlabConn
+      [sql|UPDATE issues
+           SET updated_at = (upd.time :: timestamp)
            FROM (VALUES (?,?,?)) AS upd(project,ticket,time)
-           WHERE issues.iid = upd.ticket
-             AND issues.project_id = upd.project
+           WHERE iid = upd.ticket
+             AND project_id = upd.project
           |]
       [ (projId, ticketNumber t, ticketChangeTime t)
       | t <- tickets

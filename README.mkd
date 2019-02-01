@@ -20,6 +20,8 @@ installation.
     sudo systemctl start gitlab-workhorse
     sudo systemctl start gitlab-sidekiq
     sudo systemctl start gitaly
+    # for post-import ticket fix-up
+    sudo -u postgres psql gitlab -c 'GRANT SELECT, INSERT, UPDATE ON TABLE issues TO ben;'
   ```
   
 2. Create a `ghc` group.
@@ -37,3 +39,4 @@ installation.
     origin/master:refs/heads/magic-carpet-ride` to trigger reprocessing of issue
     mentions in commits
 13. Clear the `mailers` sidekiq queue again before reenabling mail
+14. `sudo -u postgres psql gitlab -c 'REVOKE SELECT, INSERT, UPDATE ON TABLE issues FROM ben;'`
