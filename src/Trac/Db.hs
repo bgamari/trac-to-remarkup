@@ -53,35 +53,24 @@ getTicket (TicketNumber t) conn = do
           (Only t)
   return $ listToMaybe tickets
 
-findOrigField :: (Show a, FromField a) => Connection -> Text -> TicketNumber -> IO (Maybe (Maybe a))
-findOrigField conn field (TicketNumber n) = do
-    mval <- query conn [sql|SELECT oldvalue
-                            FROM ticket_change
-                            WHERE ticket = ?
-                            AND field = ?
-                            ORDER BY time ASC
-                            LIMIT 1
-                           |]
-                  (n, field)
-    --putStrLn $ "findOrigField " ++ show field ++ ": " ++ show mval
-    return $ case mval of
-      [] -> Nothing
-      [Only x] -> Just x
-
-findOrig :: (Show a, FromField a) => Connection -> Text -> Maybe a -> TicketNumber -> IO (Maybe a)
-findOrig conn field def ticketNumber =
-  fromMaybe def <$> findOrigField conn field ticketNumber
-
-findOrigDef :: (Show a, FromField a) => Connection -> Text -> a -> TicketNumber -> IO a
-findOrigDef conn field def ticketNumber =
-  fromMaybe def . join <$> findOrigField conn field ticketNumber
+getTickets :: Connection -> IO [Ticket]
+getTickets conn = do
+    mapM (toTicket conn) =<< query_ conn
+      [sql|SELECT id, type, time, component,
+                  priority, reporter, status,
+                  version, summary, milestone,
+                  keywords, description, changetime
+                  cc, owner
+           FROM ticket
+          |]
 
 toTicket :: Connection -> Row -> IO Ticket
 toTicket conn
          ((n, typ, TracTime ticketCreationTime, component,
            prio, reporter, status) :.
           (mb_version, summary, mb_milestone,
-           mb_keywords, mb_description, TracTime ticketChangeTime, mb_cc, mb_owner))
+           mb_keywords, mb_description, TracTime ticketChangeTime,
+           mb_cc, mb_owner))
   = do
     let ticketStatus = Identity New
         ticketNumber = TicketNumber n
@@ -110,6 +99,29 @@ toTicket conn
     let ticketFields = Fields {..}
     return Ticket {..}
 
+findOrigField :: (Show a, FromField a) => Connection -> Text -> TicketNumber -> IO (Maybe (Maybe a))
+findOrigField conn field (TicketNumber n) = do
+    mval <- query conn [sql|SELECT oldvalue
+                            FROM ticket_change
+                            WHERE ticket = ?
+                            AND field = ?
+                            ORDER BY time ASC
+                            LIMIT 1
+                           |]
+                  (n, field)
+    --putStrLn $ "findOrigField " ++ show field ++ ": " ++ show mval
+    return $ case mval of
+      [] -> Nothing
+      [Only x] -> Just x
+
+findOrig :: (Show a, FromField a) => Connection -> Text -> Maybe a -> TicketNumber -> IO (Maybe a)
+findOrig conn field def ticketNumber =
+  fromMaybe def <$> findOrigField conn field ticketNumber
+
+findOrigDef :: (Show a, FromField a) => Connection -> Text -> a -> TicketNumber -> IO a
+findOrigDef conn field def ticketNumber =
+  fromMaybe def . join <$> findOrigField conn field ticketNumber
+
 commaSep :: T.Text -> [T.Text]
 commaSep = map T.strip . T.split (== ',')
 
@@ -132,16 +144,6 @@ parseDifferential str = do
   stripped4 <- T.stripPrefix "D" stripped3
   either (const Nothing) (Just . Differential . fst) $ TR.decimal stripped4
 
-
-getTickets :: Connection -> IO [Ticket]
-getTickets conn = do
-    mapM (toTicket conn) =<< query_ conn
-      [sql|SELECT id, type, time, component,
-                  priority, reporter, status,
-                  version, summary, milestone,
-                  keywords, description, changetime
-           FROM ticket
-          |]
 
 getTicketChanges :: Connection -> TicketNumber -> Maybe RawTime -> IO [TicketChange]
 getTicketChanges conn n mtime = do
@@ -242,7 +244,7 @@ getTicketMutations conn = do
       TicketMutation {..}
       where
         ticketMutationType = toEnum typeIndex
-    
+
 
 toStatus :: Text -> Status
 toStatus t = case t of
