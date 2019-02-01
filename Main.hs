@@ -372,6 +372,7 @@ mkUserIdOracle logger conn clientEnv = do
             tee "tryEmptyUserName" tryEmptyUserName
         <|> tee "tryCache" tryCache
         <|> cacheIt (tee "tryLookupName - " tryLookupName)
+        <|> cacheIt (tee "tryLookupTracName - " tryLookupTracName)
         <|> cacheIt (tee "tryLookupEmail - " tryLookupEmail)
         <|> cacheIt (tee "tryCreate - " tryCreate)
       where
@@ -390,7 +391,13 @@ mkUserIdOracle logger conn clientEnv = do
             MaybeT $ pure $ M.lookup username cache
 
         tryLookupName :: UserLookupM UserId
-        tryLookupName = do
+        tryLookupName = tryLookupName' username
+
+        tryLookupTracName :: UserLookupM UserId
+        tryLookupTracName = tryLookupName' username'
+
+        tryLookupName' :: Username -> UserLookupM UserId
+        tryLookupName' name = do
             liftIO . writeLog logger "FIND USER BY NAME" $ T.unpack username'
             fmap userId $ MaybeT $ lift $ findUserByUsername gitlabToken username'
 
