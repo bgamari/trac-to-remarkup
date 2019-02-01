@@ -24,19 +24,19 @@ installation.
     sudo -u postgres psql gitlab -c 'GRANT SELECT, INSERT, UPDATE ON TABLE issues TO ben;'
   ```
   
-2. Create a `ghc` group.
-3. Create a `ghc` project in said group.
-4. Copy `Settings.hs.dist` into `Settings.hs`
-4. Set `project` in `Settings.hs` to the project ID of the `ghc` project
-5. Add an access token for root, update `gitlabToken` in `Settings.hs`.
-6. Set `gitlabBaseUrl` in `Settings.hs`
-7. Adjust other settings in `Settings.hs` as needed
-8. Build & run it
-9. Push `ghc/ghc` repo
-10. Run  `create-mirrors.py`
-11. Clear the `mailers` sidekiq queue
-12. Run `git push git@gitlab.haskell.org:ghc/ghc
-    origin/master:refs/heads/magic-carpet-ride` to trigger reprocessing of issue
-    mentions in commits
-13. Clear the `mailers` sidekiq queue again before reenabling mail
-14. `sudo -u postgres psql gitlab -c 'REVOKE SELECT, INSERT, UPDATE ON TABLE issues FROM ben;'`
+1. Create a `ghc` group.
+1. Create a `ghc` project in said group.
+1. Copy `Settings.hs.dist` into `Settings.hs`
+1. Set `project` in `Settings.hs` to the project ID of the `ghc` project
+1. Add an access token for root, update `gitlabToken` in `Settings.hs`.
+1. Set `gitlabBaseUrl` in `Settings.hs`
+1. Adjust other settings in `Settings.hs` as needed
+1. Build & run it
+1. Push `ghc/ghc` repo
+1. Run  `create-mirrors.py`
+1. Clear the `mailers` sidekiq queue
+1. Run `git push git@gitlab.haskell.org:ghc/ghc
+   origin/master:refs/heads/magic-carpet-ride` to trigger reprocessing of issue
+   mentions in commits
+1. Clear the `mailers` sidekiq queue again before reenabling mail
+1. `sudo -u postgres psql gitlab -c 'REVOKE SELECT, INSERT, UPDATE ON TABLE issues FROM ben;'`
