@@ -1185,6 +1185,7 @@ ticketTypeLabel :: TicketType -> Labels
 ticketTypeLabel Bug = "bug"
 ticketTypeLabel Task = "task"
 ticketTypeLabel FeatureRequest = "feature request"
+ticketTypeLabel MergeReq = "backport request"
 
 fieldLabels :: Fields Update -> AddRemove Labels
 fieldLabels fields =
