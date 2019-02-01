@@ -411,7 +411,7 @@ mkUserIdOracle logger conn clientEnv = do
         tryLookupEmail :: UserLookupM UserId
         tryLookupEmail = do
             m_email <- liftIO $ getUserAttribute conn Trac.Email username
-            let cuEmail = fromMaybe ("trac+"<>username'<>"@haskell.org") m_email
+            let cuEmail = fromMaybe ("trac+"<>username<>"@haskell.org") m_email
             liftIO . writeLog logger "FIND USER BY EMAIL" $ T.unpack cuEmail
             fmap userId $ MaybeT $ lift $ tee "user by email" $ findUserByEmail gitlabToken cuEmail
 
@@ -422,7 +422,7 @@ mkUserIdOracle logger conn clientEnv = do
             m_email <- liftIO $ getUserAttribute conn Trac.Email username
             uidMay <- lift $ do
               let cuEmail = case m_email of
-                              Nothing -> "trac+"<>cuUsername<>"@haskell.org"
+                              Nothing -> "trac+"<>username<>"@haskell.org"
                               Just email -> email
                   cuName = username
                   cuUsername = case M.lookup username knownUsers of
