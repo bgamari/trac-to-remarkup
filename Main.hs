@@ -405,8 +405,8 @@ mkUserIdOracle logger conn clientEnv = do
 
         tryLookupName' :: Username -> UserLookupM UserId
         tryLookupName' name = do
-            liftIO . writeLog logger "FIND USER BY NAME" $ T.unpack username'
-            fmap userId $ MaybeT $ lift $ findUserByUsername gitlabToken username'
+            liftIO . writeLog logger "FIND USER BY NAME" $ T.unpack name
+            fmap userId $ MaybeT $ lift $ findUserByUsername gitlabToken name
 
         tryLookupEmail :: UserLookupM UserId
         tryLookupEmail = do
