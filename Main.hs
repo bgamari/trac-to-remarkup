@@ -543,6 +543,7 @@ makeMutations logger' conn milestoneMap userIdOracle commentCache finishMutation
         result <- withTimeout 10000 $ case ticketMutationType m of
           -- Create a new ticket
           Trac.CreateTicket -> do
+            writeLog logger "CREATING" $ show $ ticketMutationTicket m
             ticket <- liftIO $ fromMaybe (error "Ticket not found") <$> Trac.getTicket (ticketMutationTicket m) conn
             iid@(IssueIid issueID) <- createTicket logger' milestoneMap userIdOracle commentCache ticket
             if ((fromIntegral . getTicketNumber . ticketNumber $ ticket) == issueID)
@@ -553,6 +554,7 @@ makeMutations logger' conn milestoneMap userIdOracle commentCache finishMutation
 
           -- Apply a ticket change
           Trac.ChangeTicket -> do
+            writeLog logger "MUTATING" $ show $ ticketMutationTicket m
             changes <- liftIO $ Trac.getTicketChanges conn (ticketMutationTicket m) (Just $ ticketMutationTime m)
             writeLog logger "NOTICE" $ show changes
             let iid = IssueIid (fromIntegral . getTicketNumber . ticketMutationTicket $ m)
