@@ -352,8 +352,14 @@ mkUserIdOracle logger conn clientEnv = do
     let runIt :: Bool -> Username -> StateT UserIdCache IO (Maybe UserId)
         runIt create username = StateT $ \cache -> do
             res <- runClientM (runStateT (runMaybeT $ getUserId create $ T.strip username) cache) clientEnv
-            writeLog logger "RESOLVE USER" $ show username ++ " -> " ++ show (fmap fst res)
-            either throwM pure res
+            case res of
+              Left exc -> do
+                writeLog logger "RESOLVE USER FAILED" $ show username ++ ": " ++ show exc
+                throwM exc
+              Right res' -> do
+                writeLog logger "RESOLVE USER" $ show username ++ " -> " ++ show (fst res')
+                return res'
+
     let oracle :: Bool -> Username -> ClientM (Maybe UserId)
         oracle create = liftIO
                         . withMVarState cacheVar
