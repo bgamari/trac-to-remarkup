@@ -202,6 +202,7 @@ getTicketChanges conn n mtime = do
         isSkippableField :: Text -> Bool
         isSkippableField "resolution" = True
         isSkippableField "difficulty" = True
+        isSkippableField "wikipage"   = True
         isSkippableField x | "_comment" `T.isPrefixOf` x = True
         isSkippableField _ = False
 
