@@ -66,6 +66,8 @@ openCommentCacheFile logger stateFile = do
             (read t, CommitRef h (Just repo))
           [t,n] ->
             (read t, NoteRef (read n))
+          other ->
+            error $ "openCommentCacheFile: Invalid entry: " <> show other
 
       showEntry :: (Int, CommentRef) -> String
       showEntry (t, MissingCommentRef) = show t
