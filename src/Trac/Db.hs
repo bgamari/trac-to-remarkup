@@ -59,7 +59,7 @@ getTickets conn = do
       [sql|SELECT id, type, time, component,
                   priority, reporter, status,
                   version, summary, milestone,
-                  keywords, description, changetime
+                  keywords, description, changetime,
                   cc, owner
            FROM ticket
           |]
