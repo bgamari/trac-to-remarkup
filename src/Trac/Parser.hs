@@ -213,8 +213,11 @@ number :: Parser Int
 number = read <$> some (oneOf "0123456789")
 
 tracTicketLink :: Parser Inline
-tracTicketLink = 
-  try $ TracTicketLink <$> (char '#' *> number) <*> return Nothing
+tracTicketLink = numberStyle <|> httpStyle <|> httpsStyle
+  where
+    numberStyle = try $ TracTicketLink <$> (char '#' *> number) <*> return Nothing
+    httpStyle = try $ TracTicketLink <$> (string "http://ghc.haskell.org/trac/ghc/ticket/" *> number) <*> return Nothing
+    httpsStyle = try $ TracTicketLink <$> (string "https://ghc.haskell.org/trac/ghc/ticket/" *> number) <*> return Nothing
 
 phabLink :: Parser Inline
 phabLink = try $ string "Phab:D" *> (DifferentialLink <$> number)
