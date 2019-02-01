@@ -294,6 +294,7 @@ knownUsersList =
     , "pho@cielonegro.org" .= "pho_at_cielonegro.org"
     , "Favonia" .= "favonia"
     , "andygill" .= "AndyGill"
+    , "sorear" .= "sorear" -- Seems to have multiple accounts with same email
     ]
   where (.=) = (,)
 
