@@ -32,7 +32,7 @@ type GetIssueAPI =
     GitLabRoot :> "projects"
     :> Capture "id" ProjectId :> "issues"
     :> Capture "iid" IssueIid
-    :> Post '[JSON] IssueResp
+    :> Get '[JSON] IssueResp
 
 data IssueResp
     = IssueResp { irProjectId :: ProjectId
