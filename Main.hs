@@ -294,7 +294,9 @@ knownUsersList =
     , "pho@cielonegro.org" .= "pho_at_cielonegro.org"
     , "Favonia" .= "favonia"
     , "andygill" .= "AndyGill"
-    , "sorear" .= "sorear" -- Seems to have multiple accounts with same email
+      -- Seems to have multiple accounts with same email
+    , "Stefan O'Rear <stefanor@cox.net>" .= "sorear"
+    , "stefanor@cox.net <Stefan O'Rear>" .= "sorear"
     ]
   where (.=) = (,)
 
@@ -378,6 +380,7 @@ mkUserIdOracle logger conn clientEnv = do
     getUserId create username =
             tee "tryEmptyUserName" tryEmptyUserName
         <|> tee "tryCache" tryCache
+        <|> cacheIt (tee "tryOverride" tryOverride)
         <|> cacheIt (tee "tryLookupName - " tryLookupName)
         <|> cacheIt (tee "tryLookupTracName - " tryLookupTracName)
         <|> cacheIt (tee "tryLookupEmail - " tryLookupEmail)
@@ -390,6 +393,10 @@ mkUserIdOracle logger conn clientEnv = do
         tryEmptyUserName :: UserLookupM UserId
         tryEmptyUserName
           | username == "" = getUserId create "unknown"
+          | otherwise      = empty
+
+        tryOverride
+          | Just u <- username `M.lookup` knownUsers = getUserId create u
           | otherwise      = empty
 
         tryCache :: UserLookupM UserId
