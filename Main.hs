@@ -1189,11 +1189,16 @@ ticketTypeLabel MergeReq = "backport request"
 
 fieldLabels :: Fields Update -> AddRemove Labels
 fieldLabels fields =
-    add "Trac import" <> keywordLbls <> failureLbls <> typeLbls
+    add "Trac import" <> keywordLbls <> failureLbls <> typeLbls <> statusLbls
   where
     keywordLbls = toAddRemove id $ fmap (foldMap keywordLabels) (ticketKeywords fields)
     typeLbls = toAddRemove ticketTypeLabel (ticketType fields)
     failureLbls = toAddRemove typeOfFailureLabels (ticketTypeOfFailure fields)
+    statusLbls = toAddRemove toStatusLabel (ticketStatus fields)
+
+    toStatusLabel Merge = "backport"
+    toStatusLabel Upstream = "upstream"
+    toStatusLabel _ = mempty
 
 
 data AddRemove a = AddRemove { additions, removals :: a }
