@@ -63,7 +63,7 @@ findOrigField conn field (TicketNumber n) = do
                             LIMIT 1
                            |]
                   (n, field)
-    putStrLn $ "findOrigField " ++ show field ++ ": " ++ show mval
+    --putStrLn $ "findOrigField " ++ show field ++ ": " ++ show mval
     return $ case mval of
       [] -> Nothing
       [Only x] -> Just x
