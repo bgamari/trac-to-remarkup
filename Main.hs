@@ -39,6 +39,7 @@ import MilestoneImport
 import ImportState
 import WikiImport
 import AttachmentImport
+import TicketFixup
 
 gitlabApiBaseUrl :: BaseUrl
 gitlabApiBaseUrl =
@@ -54,6 +55,7 @@ main = do
         skipWiki = "-skip-wiki" `S.member` opts
         skipTickets = "-skip-tickets" `S.member` opts
         skipWikiHistory = "-skip-wiki-history" `S.member` opts
+        skipTicketFixup = "-skip-ticket-fixup" `S.member` opts
         testParserMode = "-test-parser" `S.member` opts
         testScraperMode = "-test-scraper" `S.member` opts
         keepWikiGit = "-keep-wiki-git" `S.member` opts
@@ -139,6 +141,10 @@ main = do
           $ Logging.withContext logger "wiki" $ printErrors logger
           $ void
           $ runClientM (buildWiki logger skipWikiHistory keepWikiGit commentCache conn) env >>= throwLeft
+
+        unless skipTicketFixup
+          $ Logging.withContext logger "ticket fixup" $ printErrors logger
+          $ fixupLastUpdated logger
 
     where
       throwLeft :: (Exception e, Monad m, MonadThrow m) => Either e a -> m a

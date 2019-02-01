@@ -32,6 +32,11 @@ tracDsn :: ByteString
 -- tracDsn = ""
 -- tracDsn = "dbname=trac_ghc"
 
+-- | PostgreSQL (libpq) connection string for GitLab.
+gitlabDsn :: ByteString
+-- gitlabDsn = ""
+-- gitlabDsn = "dbname=gitlab"
+
 -- | Base URL for the Trac instance that holds the original data.
 tracBaseUrl :: BaseUrl
 tracBaseUrl = BaseUrl Https "ghc.haskell.org" 443 "/trac/ghc"

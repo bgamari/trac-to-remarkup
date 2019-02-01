@@ -101,6 +101,7 @@ executable trac-import
                        AttachmentImport
                        ImportState
                        Utils
+                       TicketFixup
   ghc-options:         -threaded -Wall
   build-depends: base
                , logging
