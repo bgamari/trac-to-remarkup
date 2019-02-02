@@ -252,6 +252,7 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                       Just Closed     -> Just CloseEvent
                       Just InfoNeeded -> Just ReopenEvent
                       Just Upstream   -> Just ReopenEvent
+                      Just Invalid    -> Just CloseEvent
 
             notNull :: Maybe Text -> Maybe Text
             notNull (Just s) | T.null s = Nothing
