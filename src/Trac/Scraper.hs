@@ -87,7 +87,16 @@ runScrape anchorMap logger action = do
   anchorMap' <- takeMVar cacheVar
   return (x, anchorMap')
 
-scrape :: AnchorMap -> Logger -> String -> String -> String -> Maybe Int -> Maybe String -> LookupComment -> LBS.ByteString -> IO (String, AnchorMap)
+scrape :: AnchorMap
+       -> Logger
+       -> String            -- ^ base url
+       -> String            -- ^ Trac site
+       -> String            -- ^ Trac project?
+       -> Maybe Int         -- ^ ?
+       -> Maybe String      -- ^ source file name
+       -> LookupComment
+       -> LBS.ByteString    -- ^ Trac markup
+       -> IO (String, AnchorMap)
 scrape anchorMap logger base org proj mn msrcname cm s =
   withContext logger "scrape" $ do
     (blocks, anchorMap') <- runScrape anchorMap logger $

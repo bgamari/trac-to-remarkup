@@ -2,22 +2,21 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module WikiImport where
+module WikiImport (buildWiki) where
 
 import Control.Monad
 import Control.Monad.Catch hiding (bracket)
+import Control.Monad.Trans.Except
 import Control.Exception.Lifted (bracket)
 import Data.Char
 import Data.Maybe
 import Data.Time
-import Data.Void
 import Control.Concurrent
 import Text.Printf
 import System.FilePath
 import System.Directory
 import System.IO
 
-import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Map.Strict as M
@@ -28,7 +27,6 @@ import Network.HTTP.Client.Internal as HTTP (HttpException (..), HttpExceptionCo
 import Network.HTTP.Types.Status
 
 import Database.PostgreSQL.Simple
-import Text.Megaparsec.Error (ParseError, parseErrorPretty)
 
 import Utils
 import Trac.Db as Trac
@@ -96,12 +94,11 @@ buildWiki logger fast keepGit commentCache conn = do
                   wpName
                   wpVersion
 
-          mbody <- dealWithHttpError logger 0 .  withTimeout 100000 $ do
-                      src <- Scraper.httpGet logger url
-                      anchorMap <- takeMVar anchorMapVar
-                      (dst, manchorMap') <-
-                        printScraperError logger $
-                          Scraper.scrape
+          anchorMap <- liftIO $ takeMVar anchorMapVar
+          res <- runExceptT $ do
+            Just src <- dealWithHttpError logger 0 . withTimeout 100000 $ Scraper.httpGet logger url
+            liftException ScraperError $ liftIO
+              $ Scraper.scrape
                             anchorMap
                             logger
                             (showBaseUrl gitlabBaseUrl)
@@ -111,24 +108,26 @@ buildWiki logger fast keepGit commentCache conn = do
                             (Just filename)
                             getCommentId
                             src
-                      let anchorMap' = fromMaybe anchorMap manchorMap'
-                      putMVar anchorMapVar anchorMap'
-                      return dst
+
+          liftIO $ putMVar anchorMapVar $ either (const anchorMap) snd res
+
           writeLog logger "INFO" $ printf "Create file %s in directory %s\n"
             (show filename)
             (show $ takeDirectory filename)
           hFlush stdout
           createDirectoryIfMissing True (takeDirectory filename)
           T.writeFile tracFilename wpBody
-          case mbody of
-            Just body ->
+
+          case res of
+            Right (body, _) ->
               writeFile filename body
-            Nothing -> do
-              writeLog logger "CONVERSION-ERROR" ""
+            Left err -> do
+              writeLog logger "CONVERSION-ERROR" (showScrapeError err)
               writeLog logger "INFO" (T.unpack wpBody)
               writeFile filename $
                 printf
-                  "CONVERSION ERROR\n\nOriginal source:\n\n```trac\n%s\n```\n"
+                  "CONVERSION ERROR\n\nError: %s\n\nOriginal source:\n\n```trac\n%s\n```\n"
+                  (showScrapeError err)
                   wpBody
         muser <- do
           (pure $ findKnownUser wpAuthor)
@@ -150,6 +149,13 @@ buildWiki logger fast keepGit commentCache conn = do
             git_ logger wc "add" ["."] >>= writeLog logger "GIT"
             git_ logger wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= writeLog logger "GIT"
 
+data ScrapeError = ScraperError Scraper.ConversionError
+                 | HttpError HttpException
+                 deriving (Show)
+
+showScrapeError :: ScrapeError -> String
+showScrapeError e = show e
+
 printGitError :: Logger -> IO () -> IO ()
 printGitError logger action = action `catch` h
   where
@@ -157,35 +163,14 @@ printGitError logger action = action `catch` h
     h err = do
       writeLog logger "GIT-EXCEPTION" $ displayException err
 
-printScraperError :: forall a. Logger -> IO (String, a) -> IO (String, Maybe a)
-printScraperError logger action = action' `catch` h
-  where
-    action' :: IO (String, Maybe a)
-    action' = do
-      (x, a) <- action
-      return (x, Just a)
+liftException :: (MonadCatch m, Exception exc)
+              => (exc -> err) -> ExceptT err m a -> ExceptT err m a
+liftException toError action = action `catch` (throwE . toError)
 
-    h :: Scraper.ConversionError -> IO (String, Maybe a)
-    h err@(Scraper.ConversionError msg) = do
-      writeLog logger "SCRAPER-EXCEPTION" $ displayException err
-      return
-        ( printf "Conversion error:\n\n```\n%s\n```\n\n" msg
-        , Nothing
-        )
-
-printParseError :: Logger -> Text -> IO String -> IO String
-printParseError logger body action = action `catch` h
+dealWithHttpError :: forall r. Logger -> Int -> IO r -> ExceptT ScrapeError IO r
+dealWithHttpError logger n action = liftIO action `catch` h
   where
-    h :: ParseError Char Void -> IO String
-    h err = do
-      writeLog logger "PARSER-ERROR" $ parseErrorPretty err
-      return $ printf "Parser error:\n\n```\n%s\n```\n\nOriginal source:\n\n```trac\n%s\n```\n"
-        (parseErrorPretty err) body
-
-dealWithHttpError :: Logger -> Int -> IO (Maybe String) -> IO (Maybe String)
-dealWithHttpError logger n action = action `catch` h
-  where
-    h :: HttpException -> IO (Maybe String)
+    h :: HttpException -> ExceptT ScrapeError IO r
     h e@(HttpExceptionRequest
           _
           (StatusCodeException
@@ -193,25 +178,26 @@ dealWithHttpError logger n action = action `catch` h
             _
           )
         ) = do
-      writeLog logger "HTTP-ERROR" $ displayException e
-      return Nothing
-    h (HttpExceptionRequest _ ConnectionFailure {}) =
-      retry
-    h (HttpExceptionRequest _ ResponseTimeout {}) =
-      retry
+      liftIO $ writeLog logger "HTTP-ERROR" $ displayException e
+      throwE $ HttpError e
+    h e@(HttpExceptionRequest _ ConnectionFailure {}) =
+      retry e
+    h e@(HttpExceptionRequest _ ResponseTimeout {}) =
+      retry e
 
     h e = do
-      writeLog logger "HTTP-ERROR" $ displayException e
-      return Nothing
+      liftIO $ writeLog logger "HTTP-ERROR" $ displayException e
+      throwE $ HttpError e
 
-    retry =
+    retry :: HttpException -> ExceptT ScrapeError IO r
+    retry e =
       if n >= 7 then do
-        writeLog logger "HTTP-ERROR" $ "Max number of retries exceeded, skipping."
-        return Nothing
+        liftIO $ writeLog logger "HTTP-ERROR" $ "Max number of retries exceeded, skipping."
+        throwE $ HttpError e
       else do
         let delaySecs = 2 ^ n
-        writeLog logger "HTTP-ERROR" $ "Network error, retrying in " ++ show delaySecs ++ " seconds"
-        threadDelay (delaySecs * 1000000)
+        liftIO $ writeLog logger "HTTP-ERROR" $ "Network error, retrying in " ++ show delaySecs ++ " seconds"
+        liftIO $ threadDelay (delaySecs * 1000000)
         dealWithHttpError logger (succ n) action
 
 (|$|) :: (Monad m) => m (Maybe a) -> m (Maybe a) -> m (Maybe a)

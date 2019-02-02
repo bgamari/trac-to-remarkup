@@ -15,10 +15,14 @@ import Control.Monad.IO.Class
 import Control.Monad.Error.Class
 import Data.List
 import Data.Maybe
+import Data.Void
+import Text.Printf
 import qualified Data.Set as S
+import Data.Text (Text)
 import qualified Data.Text as T
 import System.Environment
 
+import Text.Megaparsec.Error (ParseError, parseErrorPretty)
 import Database.PostgreSQL.Simple
 import Network.HTTP.Client.TLS as TLS
 import Servant.Client
@@ -156,6 +160,15 @@ main = do
 
 dummyGetCommentId :: Int -> Int -> IO CommentRef
 dummyGetCommentId _t _c = pure MissingCommentRef
+
+printParseError :: Logger -> Text -> IO String -> IO String
+printParseError logger body action = action `catch` h
+  where
+    h :: ParseError Char Void -> IO String
+    h err = do
+      writeLog logger "PARSER-ERROR" $ parseErrorPretty err
+      return $ printf "Parser error:\n\n```\n%s\n```\n\nOriginal source:\n\n```trac\n%s\n```\n"
+        (parseErrorPretty err) body
 
 makeMutations :: Logger
               -> Connection
