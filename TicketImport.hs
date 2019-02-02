@@ -577,6 +577,8 @@ filterFieldChanges fields =
            , ticketOwner = noUpdate
            , ticketSummary = noUpdate
            , ticketStatus = noUpdate
+           , ticketKeywords = noUpdate
+           , ticketMilestone = noUpdate
            }
   where
     noUpdate = Update Nothing Nothing
