@@ -71,13 +71,13 @@ keywordLabels =
       $ [ passthru "newcomer"
         , ("newcomers", "newcomer")
         , passthru "TypeInType"
-        , passthru "TypeFamilies"
-        , passthru "PatternSynonyms"
-        , passthru "Deriving"
-        , passthru "Generics"
+        , passthru "type families"
+        , passthru "pattern synonyms"
+        , passthru "deriving"
+        , passthru "generics"
         , passthru "pattern match warnings"
-        , passthru "Inlining"
-        , passthru "QuantifiedConstraints"
+        , passthru "inlining"
+        , passthru "quantified constraints"
         , passthru "TypeApplications"
         , passthru "levity polymorphism"
         , passthru "CodeGen"
@@ -116,22 +116,22 @@ keywordLabels =
 typeOfFailureLabels :: TypeOfFailure -> Labels
 typeOfFailureLabels t =
     case t of
-      BuildingGhcFailed         -> "GhcBuildFailure"
-      CompileTimeCrash          -> "CompilerCrash"
-      CompileTimePerformance    -> "CompilerPerformance"
-      IncorrectDebugInformation -> "DebugInformation"
-      DocumentationBug          -> "Documentation"
+      BuildingGhcFailed         -> "ghc build failure"
+      CompileTimeCrash          -> "compiler crash"
+      CompileTimePerformance    -> "compiler perf"
+      IncorrectDebugInformation -> "debug information"
+      DocumentationBug          -> "documentation"
       InvalidProgramAccepted    -> mempty
       GhcDoesn'tWork            -> mempty
       GhciCrash                 -> "GHCi"
       ValidProgramRejected      -> mempty
-      IncorrectAPIAnnotation    -> "APIAnnotations"
-      PoorErrorMessage          -> "ErrorMessages"
-      IncorrectWarning          -> "ErrorMessages"
-      IncorrectResultAtRuntime  -> "IncorrectResultAtRuntime"
+      IncorrectAPIAnnotation    -> "API annotations"
+      PoorErrorMessage          -> "error messages"
+      IncorrectWarning          -> "error messages"
+      IncorrectResultAtRuntime  -> "incorrect runtime result"
       InstallationFailure       -> mempty
-      RuntimeCrash              -> "RuntimeCrash"
-      RuntimePerformance        -> "RuntimePerformance"
+      RuntimeCrash              -> "runtime crash"
+      RuntimePerformance        -> "runtime perf"
       OtherFailure              -> mempty
 
 ticketTypeLabel :: TicketType -> Labels
