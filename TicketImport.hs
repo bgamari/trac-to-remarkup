@@ -70,44 +70,78 @@ keywordLabels =
       M.fromList
       $ [ passthru "newcomer"
         , ("newcomers", "newcomer")
+        , ("easy", "newcomer")
         , passthru "TypeInType"
         , passthru "type families"
         , passthru "pattern synonyms"
         , passthru "deriving"
+        , ("Deriving", "deriving")
         , passthru "generics"
         , passthru "pattern match warnings"
         , passthru "inlining"
         , passthru "quantified constraints"
         , passthru "TypeApplications"
         , passthru "levity polymorphism"
-        , passthru "CodeGen"
+        , passthru "code-gen"
+        , ("codegen", "code-gen")
         , passthru "GADTs"
         , "JoinPoints" .= "join points"
         , passthru "Typeable"
         , ("Typeable", "Typeable")
         , ("ORF", "OverloadedRecordFields")
         , ("hs-boot", "hs-boot")
-        , passthru "SpecConstr"
+        , passthru "spec constr"
         , passthru "ApplicativeDo"
-        , passthru "FunDeps"
+        , passthru "demand analysis"
+        , ("FunDeps", "functional dependencies")
+        , ("FunctionalDependencies", "functional dependencies")
         , "TypedHoles" .= "typed holes"
         , passthru "CSE"
         , ("TypeCheckerPlugins", "plugins")
-        , ("deriving-perf", "Deriving" <> "compiler perf")
+        , ("deriving-perf", "deriving" <> "compiler perf")
         , passthru "CUSKs"
         , passthru "PolyKinds"
         , ("performance", "runtime perf")
         , ("ci-breakage", "CI breakage")
-
         , ("DWARF", "debug information")
         , passthru "SafeHaskell"
-        , passthru "CustomTypeErrors"
+        , passthru "custom type errors"
         , passthru "StaticPointers"
         , passthru "Unicode"
+        , ("unicode", "Unicode")
+        , ("TypeErrorMessages", "error messages")
         , ("warnings", "error messages")
+        , ("warning", "error messages")
         , passthru "Arrows"
         , passthru "SIMD"
         , passthru "TemplateHaskell"
+        , passthru "backpack"
+        , passthru "ImpredicativeTypes"
+        , ("Roles", "roles")
+        , passthru "exceptions"
+        , passthru "debugger"
+        , ("synonyms", "pattern synonyms")  -- generally arises from typos
+        , passthru "cpp"
+        , ("TypedTemplateHaskell", "typed TemplateHaskell")
+        , passthru "strings"
+        , passthru "clang"
+        , ("FloatOut", "float-out")
+        , passthru "QuantifiedContexts"
+        , passthru "InjectiveFamilies"
+        , passthru "performance"
+        , ("CPRAnalysis", "CPR analysis")
+        , ("StaticArgumentTransformation", "static argument transformation")
+        , ("PartialTypeSignatures", "partial type sigs")
+        , passthru "SafeHaskell"
+        , ("RemoteGHCi", "remote GHCi")
+        , passthru "integer-gmp"
+        , ("RecompilationCheck", "recompilation checking")
+        , ("LateLamLift", "late lambda lifting")
+        , ("Simplifier", "simplifier")
+        , passthru "CAFs"
+        , passthru "rules"
+        , passthru "linking"
+        , ("linker", "linking")
         ]
       where
         passthru x = (x, mkLabel x)
