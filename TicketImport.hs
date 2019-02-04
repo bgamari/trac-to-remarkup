@@ -497,6 +497,7 @@ fieldsTable extraRows (Fields{..})
         , row "Type" $ concatFields $ T.pack . show <$> ticketType
         , row "TypeOfFailure" $ concatFields $ T.pack . show <$> ticketTypeOfFailure
         , row "Priority" $ concatFields $ toPriorityName <$> ticketPriority
+        , row "Resolution" $ concatFields $ T.pack . show <$> ticketResolution
         -- , row "Milestone" $ concatFields ticketMilestone
         , row "Component" $ concatFields ticketComponent
         , row "Test case" $ concatFields $ ticketTestCase
