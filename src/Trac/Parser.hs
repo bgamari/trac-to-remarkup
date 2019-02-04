@@ -426,8 +426,11 @@ shorthandLink :: Parser Inline
 shorthandLink = do
   try (char '[')
   notFollowedBy (satisfy isSpace)
+  -- People sometimes use square brackets in prose; only accept things that
+  -- look like they begin with a link target
+  prefix <- string "http:" <|> string "https:" <|> string "wiki:" <|> string "ticket:"
   l <- many (noneOf "]\n ")
-  f <- makeLink l
+  f <- makeLink $ prefix++l
   desc <- words <$> manyTill (noneOf "]\n") (char ']')
   return $ f desc
 
