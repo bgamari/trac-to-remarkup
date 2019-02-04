@@ -60,6 +60,7 @@ main = do
         skipTickets = "-skip-tickets" `S.member` opts
         skipWikiHistory = "-skip-wiki-history" `S.member` opts
         skipTicketFixup = "-skip-ticket-fixup" `S.member` opts
+
         testParserMode = "-test-parser" `S.member` opts
         testScraperMode = "-test-scraper" `S.member` opts
         keepWikiGit = "-keep-wiki-git" `S.member` opts
