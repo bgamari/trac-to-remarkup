@@ -37,7 +37,8 @@ type Row =
     (Integer, Text, TracTime, Text,
      Text, Text, Text) :.
     (Maybe Text, Text, Maybe Text,
-     Maybe Text, Maybe Text, TracTime, Maybe Text, Maybe Text)
+     Maybe Text, Maybe Text, TracTime,
+     Maybe Text, Maybe Text, Maybe Text)
 
 getTicket :: TicketNumber -> Connection -> IO (Maybe Ticket)
 getTicket (TicketNumber t) conn = do
@@ -46,7 +47,7 @@ getTicket (TicketNumber t) conn = do
                   priority, reporter, status,
                   version, summary, milestone,
                   keywords, description, changetime,
-                  cc, owner
+                  cc, owner, resolution
            FROM ticket
            WHERE id = ?
           |]
@@ -60,7 +61,7 @@ getTickets conn = do
                   priority, reporter, status,
                   version, summary, milestone,
                   keywords, description, changetime,
-                  cc, owner
+                  cc, owner, resolution
            FROM ticket
           |]
 
@@ -70,7 +71,7 @@ toTicket conn
            prio, reporter, status) :.
           (mb_version, summary, mb_milestone,
            mb_keywords, mb_description, TracTime ticketChangeTime,
-           mb_cc, mb_owner))
+           mb_cc, mb_owner, mb_resolution))
   = do
     let ticketStatus = Identity New
         ticketNumber = TicketNumber n
@@ -94,9 +95,9 @@ toTicket conn
     ticketTypeOfFailure <- i . toTypeOfFailure . fromMaybe "" <$> findOrig conn "failure" (Just "") ticketNumber
     ticketCC <- i . S.fromList . commaSep . fromMaybe "" <$> findOrig conn "cc" mb_cc ticketNumber
     ticketOwner <- i . maybe Unowned toTicketOwner <$> findOrig conn "owner" mb_owner ticketNumber
-    ticketOperatingSystem <- i . fromMaybe "" <$> findOrig conn "os" mb_owner ticketNumber
-    ticketArchitecture <- i . fromMaybe "" <$> findOrig conn "architecture" mb_owner ticketNumber
-    ticketResolution <- i . toTicketResolution <$> findOrig conn "resolution" mb_owner ticketNumber
+    ticketOperatingSystem <- i . fromMaybe "" <$> findOrig conn "os" Nothing ticketNumber
+    ticketArchitecture <- i . fromMaybe "" <$> findOrig conn "architecture" Nothing ticketNumber
+    ticketResolution <- i . toTicketResolution <$> findOrig conn "resolution" mb_resolution ticketNumber
     let ticketFields = Fields {..}
     return Ticket {..}
 
