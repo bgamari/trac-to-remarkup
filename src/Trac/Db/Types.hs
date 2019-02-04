@@ -83,6 +83,7 @@ data Status = New | Assigned | Patch | Merge | Closed | InfoNeeded | Upstream | 
 data Fields f = Fields { ticketType            :: f TicketType
                        , ticketSummary         :: f Text
                        , ticketComponent       :: f Text
+                       , ticketResolution      :: f TicketResolution
                        , ticketPriority        :: f Priority
                        , ticketVersion         :: f Text
                        , ticketMilestone       :: f Text
@@ -109,6 +110,7 @@ instance FieldToJSON f => ToJSON (Fields f) where
         [ "type" .=? ticketType
         , "summary" .=? ticketSummary
         , "component" .=? ticketComponent
+        , "resolution" .=? ticketResolution
         , "version" .=? ticketVersion
         , "milestone" .=? ticketMilestone
         , "description" .=? ticketDescription
@@ -137,6 +139,7 @@ foldFields Fields{..}=
        getConst ticketType
     <> getConst ticketSummary
     <> getConst ticketComponent
+    <> getConst ticketResolution
     <> getConst ticketPriority
     <> getConst ticketVersion
     <> getConst ticketMilestone
@@ -161,6 +164,7 @@ hoistFields f Fields{..} =
     Fields { ticketType            = f ticketType
            , ticketSummary         = f ticketSummary
            , ticketComponent       = f ticketComponent
+           , ticketResolution      = f ticketResolution
            , ticketPriority        = f ticketPriority
            , ticketVersion         = f ticketVersion
            , ticketMilestone       = f ticketMilestone
@@ -187,7 +191,7 @@ emptyFieldsOf x = Fields
     x x x
     x x x
     x x x
-    x
+    x x
 
 emptyFields :: Fields Maybe
 emptyFields = emptyFieldsOf Nothing
@@ -201,6 +205,7 @@ collapseFields a b =
     Fields { ticketType = ticketType a <|> ticketType b
            , ticketSummary = ticketSummary a <|> ticketSummary b
            , ticketComponent = ticketComponent a <|> ticketComponent b
+           , ticketResolution = ticketResolution a <|> ticketResolution b
            , ticketPriority = ticketPriority a <|> ticketPriority b
            , ticketVersion = ticketVersion a <|> ticketVersion b
            , ticketMilestone = ticketMilestone a <|> ticketMilestone b
@@ -248,6 +253,10 @@ class IsEmpty a where
 
 instance IsEmpty T.Text where
     isEmpty = T.null
+
+instance IsEmpty TicketResolution where
+  isEmpty Unresolved = True
+  isEmpty _ = False
 
 instance IsEmpty TicketOwner where
     isEmpty Unowned = True
@@ -320,6 +329,16 @@ data TicketChange = TicketChange { changeTime    :: UTCTime
                                  }
 
                   deriving (Show)
+
+data TicketResolution
+    = Unresolved
+    | ResolvedDuplicate
+    | ResolvedFixed
+    | ResolvedWon'tFix
+    | ResolvedWorksForMe
+    | ResolvedInvalid
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass (ToJSON)
 
 data TypeOfFailure
     = BuildingGhcFailed

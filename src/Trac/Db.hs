@@ -96,6 +96,7 @@ toTicket conn
     ticketOwner <- i . maybe Unowned toTicketOwner <$> findOrig conn "owner" mb_owner ticketNumber
     ticketOperatingSystem <- i . fromMaybe "" <$> findOrig conn "os" mb_owner ticketNumber
     ticketArchitecture <- i . fromMaybe "" <$> findOrig conn "architecture" mb_owner ticketNumber
+    ticketResolution <- i . toTicketResolution <$> findOrig conn "resolution" mb_owner ticketNumber
     let ticketFields = Fields {..}
     return Ticket {..}
 
@@ -189,6 +190,7 @@ getTicketChanges conn n mtime = do
           "failure"      -> fieldChange $ emptyFieldsUpdate{ticketTypeOfFailure = mkUpdate (fmap toTypeOfFailure) old new}
           "os"           -> fieldChange $ emptyFieldsUpdate{ticketOperatingSystem = mkUpdate id old new}
           "architecture" -> fieldChange $ emptyFieldsUpdate{ticketArchitecture = mkUpdate id old new}
+          "resolution"   -> fieldChange $ emptyFieldsUpdate{ticketResolution = mkUpdate (Just . toTicketResolution) old new}
 
           -- TODO: The other fields
 
@@ -202,7 +204,6 @@ getTicketChanges conn n mtime = do
 
       where
         isSkippableField :: Text -> Bool
-        isSkippableField "resolution" = True
         isSkippableField "difficulty" = True
         isSkippableField "wikipage"   = True
         isSkippableField x | "_comment" `T.isPrefixOf` x = True
@@ -299,6 +300,16 @@ toTypeOfFailure t = case t of
     "Runtime crash" -> RuntimeCrash
     "Runtime performance bug" -> RuntimePerformance
     "" -> OtherFailure
+
+toTicketResolution :: Maybe Text -> TicketResolution
+toTicketResolution mt = case mt of
+    Nothing -> Unresolved
+    Just "wontfix" -> ResolvedWon'tFix
+    Just "fixed" -> ResolvedFixed
+    Just "invalid" -> ResolvedInvalid
+    Just "duplicate" -> ResolvedDuplicate
+    Just "worksforme" -> ResolvedWorksForMe
+    Just _ -> error $ "Unknown ticket resolution: " ++ show mt
 
 data Milestone = Milestone { mName :: Text
                            , mDescription :: Text
