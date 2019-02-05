@@ -8,23 +8,21 @@
 
 module Main (main) where
 
-import Data.Char
 import Control.Monad
 import Control.Monad.Catch hiding (bracket, onError)
 import Control.Monad.IO.Class
 import Control.Monad.Error.Class
-import Data.List
 import Data.Maybe
 import Data.Void
 import Text.Printf
 import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
-import System.Environment
 
 import Text.Megaparsec.Error (ParseError, parseErrorPretty)
 import Database.PostgreSQL.Simple
 import Network.HTTP.Client.TLS as TLS
+import Options.Applicative hiding (ParseError, action)
 import Servant.Client
 
 import Logging (LoggerM (..), Logger, makeStdoutLogger, writeLog, liftLogger)
@@ -49,29 +47,50 @@ gitlabApiBaseUrl :: BaseUrl
 gitlabApiBaseUrl =
   gitlabBaseUrl { baseUrlPath = "api/v4" }
 
+data Mode = Import { skipMilestones :: Bool
+                   , skipTickets :: Bool
+                   , skipTicketFixup :: Bool
+                   , skipAttachments :: Bool
+                   , skipWiki :: Bool
+                   , skipWikiHistory :: Bool
+                   , keepWikiGit :: Bool
+                   , ticketNumbers :: S.Set TicketNumber
+                   }
+          | TestParser
+          | TestScraper [String]
+
+mode :: Parser Mode
+mode = hsubparser $
+       command "import" (info (helper <*> importMode) (progDesc "import mode"))
+    <> command "test-parser" (info (helper <*> testParserMode) (progDesc "test ticket parser"))
+    <> command "test-scraper" (info (helper <*> testScraperMode) (progDesc "test wiki parser"))
+
+importMode :: Parser Mode
+importMode =
+  Import <$> switch (long "skip-milestones" <> help "skip milestone import")
+         <*> switch (long "skip-attachments" <> help "skip attachment import")
+         <*> switch (long "skip-tickets" <> help "skip ticket import")
+         <*> switch (long "skip-ticket-fixup" <> help "skip ticket last-updated time fixup")
+         <*> switch (long "skip-wiki" <> help "skip wiki import")
+         <*> switch (long "skip-wiki-history" <> help "skip wiki history import")
+         <*> switch (long "keep-wiki-git" <> help "retain wiki working copy")
+         <*> ticketNumberSet
+
+ticketNumberSet :: Parser (S.Set TicketNumber)
+ticketNumberSet =
+  fmap S.fromList $ some
+  $ argument (TicketNumber <$> auto) (metavar "N" <> help "ticket numbers")
+
+testParserMode :: Parser Mode
+testParserMode = pure TestParser
+
+testScraperMode :: Parser Mode
+testScraperMode =
+  TestScraper <$> some (argument str $ metavar "URL" <> help "Wiki page URLs to parse")
+
 main :: IO ()
 main = do
     logger <- makeStdoutLogger
-    args <- getArgs
-    let opts = S.fromList . filter (isPrefixOf "-") $ args
-        skipMilestones = "-skip-milestones" `S.member` opts
-        skipAttachments = "-skip-attachments" `S.member` opts
-        skipWiki = "-skip-wiki" `S.member` opts
-        skipTickets = "-skip-tickets" `S.member` opts
-        skipWikiHistory = "-skip-wiki-history" `S.member` opts
-        skipTicketFixup = "-skip-ticket-fixup" `S.member` opts
-
-        testParserMode = "-test-parser" `S.member` opts
-        testScraperMode = "-test-scraper" `S.member` opts
-        keepWikiGit = "-keep-wiki-git" `S.member` opts
-    let ticketNumbers = S.fromList
-                      . map (TicketNumber . read)
-                      . filter (all isDigit)
-                      . filter (not . isPrefixOf "-")
-                      $ args
-        scrapeUrls = filter (not . all isDigit)
-                   . filter (not . isPrefixOf "-")
-                   $ args
     conn <- connectPostgreSQL tracDsn
     mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
     let env = mkClientEnv mgr gitlabApiBaseUrl
@@ -81,8 +100,9 @@ main = do
 
     (commentCache, storeComment) <- openCommentCacheFile logger commentCacheFile
 
-    if testParserMode
-      then do
+    the_mode <- execParser $ info (helper <*> mode) mempty
+    case the_mode of
+      TestParser -> do
         wpBody <- getContents
         mdBody <- printParseError logger (T.pack wpBody) $
           let dummyLookupAnchor :: String -> Maybe String
@@ -98,8 +118,9 @@ main = do
                       dummyLookupAnchor
                       wpBody
         putStr mdBody
-      else if testScraperMode
-        then forM_ scrapeUrls $ \url -> do
+
+      TestScraper scrapeUrls -> do
+        forM_ scrapeUrls $ \url -> do
           src <- Scraper.httpGet logger url
           (dst, amap) <- Scraper.scrape
             mempty
@@ -113,7 +134,7 @@ main = do
             src
           putStrLn dst
 
-      else do
+      Import{..} -> do
         milestoneMap <- either (error . show) id <$> runClientM (makeMilestones logger (not skipMilestones) conn) env
 
         unless skipTickets $ Logging.withContext logger "tickets" $ printErrors logger $ do

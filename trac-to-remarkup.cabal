@@ -126,6 +126,7 @@ executable trac-import
                , mtl
                , postgresql-simple
                , servant-client
+               , optparse-applicative
                , stm
                , text
                , time
