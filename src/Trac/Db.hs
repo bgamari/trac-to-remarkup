@@ -9,6 +9,7 @@ module Trac.Db where
 
 import Data.Functor.Identity
 import Data.Maybe
+import Data.Char (isAlphaNum)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import Trac.Db.Types
@@ -303,14 +304,18 @@ toTypeOfFailure t = case t of
     "" -> OtherFailure
 
 toTicketResolution :: Maybe Text -> TicketResolution
-toTicketResolution mt = case mt of
+toTicketResolution mt = case mt' of
     Nothing -> Unresolved
+    Just "none" -> ResolvedNoReason
     Just "wontfix" -> ResolvedWon'tFix
     Just "fixed" -> ResolvedFixed
     Just "invalid" -> ResolvedInvalid
     Just "duplicate" -> ResolvedDuplicate
     Just "worksforme" -> ResolvedWorksForMe
     Just _ -> error $ "Unknown ticket resolution: " ++ show mt
+  where
+    mt' = T.toLower . T.filter isAlphaNum <$> mt
+
 
 data Milestone = Milestone { mName :: Text
                            , mDescription :: Text

@@ -332,6 +332,7 @@ data TicketChange = TicketChange { changeTime    :: UTCTime
 
 data TicketResolution
     = Unresolved
+    | ResolvedNoReason
     | ResolvedDuplicate
     | ResolvedFixed
     | ResolvedWon'tFix
