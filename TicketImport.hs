@@ -16,6 +16,7 @@ import Data.Maybe
 import Data.String
 import Control.Monad.IO.Class
 import Control.Monad.Error.Class
+import Control.Monad.Catch (handleAll)
 import Data.Foldable
 
 import Data.Functor.Identity
@@ -246,22 +247,28 @@ createTicketChanges :: Logger
 createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment iid tc = do
     writeLog logger "TICKET-CHANGE" . show $ tc
 
-    handleIssueRelations
-    mhash <- handleCommitComments
+    withContext logger "issue-relations" . catchAndLogErrors () $ handleIssueRelations
+    mhash <- withContext logger "commit-comments" . catchAndLogErrors Nothing $ handleCommitComments
 
     -- Here we drop changes to CC field that we accounted for by way of
     -- subscription or unsubscription.
-    fields' <- fromMaybe (changeFields tc)
-               <$> withFieldDiff (ticketCC $ changeFields tc) handleSubscriptions
+    fields' <- fmap (fromMaybe $ changeFields tc) .
+                withContext logger "subscriptions" .
+                catchAndLogErrors Nothing $
+                withFieldDiff (ticketCC $ changeFields tc) handleSubscriptions
 
-    meid <- handleGitLabMetadata fields'
+    meid <- withContext logger "gitlab-meta" . catchAndLogErrors Nothing $
+              handleGitLabMetadata fields'
 
     let trivialUpdate = isTrivialFieldUpdate fields'
         trivialComment = isNothing (changeComment tc)
         trivial = trivialComment && trivialUpdate
     mcinId <- if trivial
-        then return Nothing
-        else createNote fields'
+        then
+          return Nothing
+        else
+          withContext logger "note" . catchAndLogErrors Nothing $
+            createNote fields'
 
 
     let mid = fromMaybe MissingCommentRef $ mcinId <|> meid <|> mhash
@@ -470,6 +477,14 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
           storeComment (unIssueIid iid) mid
           (M.lookup (unIssueIid iid) <$> readMVar commentCache))
           >>= writeLog logger "STORE-COMMENT" . show
+
+    onError :: (Show e) => a -> e -> ClientM a
+    onError d err = do
+        writeLog logger "ERROR" $ "Failed to execute ticket mutation step: " ++ show err
+        pure d
+
+    catchAndLogErrors :: a -> ClientM a -> ClientM a
+    catchAndLogErrors d = handleAll (onError d) . flip catchError (onError d)
 
 fieldsJSON :: forall f. (FieldToJSON f, Functor f, ConcatFields f, Show (Fields f))
            => Fields f -> T.Text
