@@ -86,7 +86,7 @@ tableCellContents (TableHeaderCell bs) = bs
 
 writeRemarkup :: String -> String -> String -> [Block] -> String
 writeRemarkup base org project =
-  render (Just 80) . runW (Context org project base) . blocks
+  render Nothing . runW (Context org project base) . blocks
 
 blocks :: [Block] -> W Doc
 blocks bs =
@@ -300,7 +300,4 @@ escapeMarkdown = go
                     _ -> '@':go cs
        _ | c `elem` ['\\','`','*','[',']','#', '|', '^', '~'] ->
               '\\':c:go cs
-       '|' -> '\\':'|':go cs
-       '^' -> '\\':'^':go cs
-       '~' -> '\\':'~':go cs
        _   -> c : go cs
