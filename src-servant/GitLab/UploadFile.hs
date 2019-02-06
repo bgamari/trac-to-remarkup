@@ -39,7 +39,8 @@ uploadFile (AccessToken tok) sudo (ProjectId prjId) fname cs = do
     liftIO $ BS.writeFile tmpfile cs
     base <- baseUrl <$> ask
     out <- liftIO $ readProcess "curl"
-        [ "--request", "POST"
+        [ "--silent"
+        , "--request", "POST"
         , "--header", "PRIVATE-TOKEN: " <> T.unpack tok
         , "--form", "file=@" <> tmpfile
         , showBaseUrl base <> "/projects/" <> show prjId <> "/uploads" <> sudoParam
