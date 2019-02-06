@@ -68,9 +68,9 @@ mode = hsubparser $
 importMode :: Parser Mode
 importMode =
   Import <$> switch (long "skip-milestones" <> help "skip milestone import")
-         <*> switch (long "skip-attachments" <> help "skip attachment import")
          <*> switch (long "skip-tickets" <> help "skip ticket import")
          <*> switch (long "skip-ticket-fixup" <> help "skip ticket last-updated time fixup")
+         <*> switch (long "skip-attachments" <> help "skip attachment import")
          <*> switch (long "skip-wiki" <> help "skip wiki import")
          <*> switch (long "skip-wiki-history" <> help "skip wiki history import")
          <*> switch (long "keep-wiki-git" <> help "retain wiki working copy")
@@ -78,7 +78,7 @@ importMode =
 
 ticketNumberSet :: Parser (S.Set TicketNumber)
 ticketNumberSet =
-  fmap S.fromList $ some
+  fmap S.fromList $ many
   $ argument (TicketNumber <$> auto) (metavar "N" <> help "ticket numbers")
 
 testParserMode :: Parser Mode
