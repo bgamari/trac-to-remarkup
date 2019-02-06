@@ -89,10 +89,13 @@ withContextM c =
 makeStdoutLogger :: forall m. (MonadBase IO m, MonadBaseControl IO m)
                  => m (LoggerM m)
 makeStdoutLogger = do
-  logChan <- liftBase newTChanIO
+  logVar <- liftBase $ newTMVarIO ()
   contextVar <- liftBase $ newTVarIO []
-  let writeLogRaw msg = 
-        liftBase $ atomically $ writeTChan logChan msg
+  let writeLogRaw msg = liftBase $
+        bracket_
+          (atomically $ takeTMVar logVar)
+          (atomically $ putTMVar logVar ())
+          (mapM_ putStrLn msg >> hFlush stdout)
       getContext = 
         liftBase $ atomically $ readTVar contextVar
       pushContext c = liftBase $ atomically $ do
@@ -102,7 +105,23 @@ makeStdoutLogger = do
         cs <- readTVar contextVar
         writeTVar contextVar (drop 1 cs)
         pure $ listToMaybe cs
-  logWorker <- liftBase . async . forever $ do
-    atomically (readTChan logChan) >>= liftBase . mapM putStrLn
-  link logWorker
   return (Logger {..} :: LoggerM m)
+
+-- makeStdoutLogger = do
+--   logChan <- liftBase newTChanIO
+--   contextVar <- liftBase $ newTVarIO []
+--   let writeLogRaw msg = 
+--         liftBase $ atomically $ writeTChan logChan msg
+--       getContext = 
+--         liftBase $ atomically $ readTVar contextVar
+--       pushContext c = liftBase $ atomically $ do
+--         cs <- readTVar contextVar
+--         writeTVar contextVar (c:cs)
+--       popContext = liftBase $ atomically $ do
+--         cs <- readTVar contextVar
+--         writeTVar contextVar (drop 1 cs)
+--         pure $ listToMaybe cs
+--   logWorker <- liftBase . async . forever $ do
+--     atomically (readTChan logChan) >>= liftBase . mapM putStrLn
+--   link logWorker
+--   return (Logger {..} :: LoggerM m)
