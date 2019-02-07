@@ -201,7 +201,13 @@ convertInline (R.CommentLink mt c mlabel) = do
       pure . Str $ fromMaybe "?" (unwords <$> mlabel)
     Just ticketN -> do
       cm <- asks lookupComment
-      liftIO (cm ticketN c) >>= \case
+      mref <- liftIO (cm ticketN c)
+      writeLogM "LOOKUP-COMMENT" $
+          printf "(%i, %i) -> %s"
+            ticketN
+            c
+            (show mref)
+      case mref of
         (NoteRef t) ->
             pure (TicketLink mlabelInline ticketN (Just t))
         (CommitRef hash mrepo) ->
