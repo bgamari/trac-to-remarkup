@@ -420,7 +420,7 @@ pItemList = do
                 (Para <$> some inlineNoNL <|> pList))
 
 link :: Parser Inline
-link = longhandLink <|> shorthandLink
+link = try longhandLink <|> try shorthandLink
 
 shorthandLink :: Parser Inline
 shorthandLink = do
