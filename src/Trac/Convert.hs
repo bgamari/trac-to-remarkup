@@ -178,8 +178,10 @@ convertInline (R.WikiLink wikiname mlabel) = do
   url <- tracWikiNameToGitlab wikiname
   let label = map Str $ fromMaybe [wikiname] mlabel
   pure $ WikiLink label url
-convertInline (R.GitCommitLink hash mrepo []) = pure $ GitCommitLink (intersperse Space (prettyCommit hash mrepo)) hash mrepo
-convertInline (R.GitCommitLink hash mrepo is) = pure $ GitCommitLink (intersperse Space (map Str is)) hash mrepo
+convertInline (R.GitCommitLink hash mrepo []) =
+  pure $ GitCommitLink (intersperse Space (prettyCommit hash mrepo)) hash mrepo
+convertInline (R.GitCommitLink hash mrepo is) =
+  pure $ GitCommitLink (intersperse Space (map Str is)) hash mrepo
 convertInline (R.Str s) = pure $ Str s
 convertInline (R.LineBreak)  = pure LineBreak
 convertInline (R.Space)      = pure Space

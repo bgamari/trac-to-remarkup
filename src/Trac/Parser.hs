@@ -424,7 +424,7 @@ link = try longhandLink <|> try shorthandLink
 
 shorthandLink :: Parser Inline
 shorthandLink = do
-  try (char '[')
+  char '['
   notFollowedBy (satisfy isSpace)
   -- People sometimes use square brackets in prose; only accept things that
   -- look like they begin with a link target
