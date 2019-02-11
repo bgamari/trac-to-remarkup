@@ -132,12 +132,6 @@ inlinesToParas = map inlineToPara
 inlinesToPara :: Inlines -> Blocks
 inlinesToPara = (:[]) . Para
 
-{-
-blocks :: Parser Blocks
-blocks = do header <|> para <|> list <|> defn <|> code <|> quote
-                   <|> disc <|> table <|> horiz
--}
-
 inlines = some inline
 
 inline :: Parser Inline
@@ -249,6 +243,7 @@ endline = try $ do
   newline
   notFollowedBy blankline
   notFollowedBy (pItemListStart)
+  notFollowedBy (pNumberListStart)
   notFollowedBy literalBlockStart
   notFollowedBy (char '>')
   notFollowedBy (string "  ")
@@ -324,8 +319,8 @@ sc = L.space (void $ oneOf " \t") empty empty
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
-parser :: Parser [Block]
-parser = pItemListStart *> pItemList <* eof
+-- parser :: Parser [Block]
+-- parser = pItemListStart *> pItemList <* eof
 
 defnList :: Parser Block
 defnList = try $ do
@@ -400,14 +395,23 @@ data ListType
   deriving Show
 
 pList :: Parser Block
-pList =  do
-  getInput >>= \s -> traceShowM ("pList", s)
-  List BulletListType . map (:[]) <$> (try pItemListStart *> pItemList)
+pList = do
+  try pNumberList <|> try pItemList
 
-pItemListStart = sc *> char '*'
-
-pItemList :: Parser [Block]
+pItemList :: Parser Block
 pItemList = do
+  getInput >>= \s -> traceShowM ("pItemList", s)
+  List BulletListType <$> (some $ try pItemListStart *> pItemListCont)
+
+pNumberList :: Parser Block
+pNumberList = do
+  getInput >>= \s -> traceShowM ("pNumberList", s)
+  List NumberedListType <$> (some $ try pNumberListStart *> pNumberListCont)
+
+pItemListStart = try $ sc *> char '*'
+
+pItemListCont :: Parser [Block]
+pItemListCont = do
   getInput >>= \s -> traceShowM ("pItemList", s)
   indentBlock2 scn p
   where
@@ -417,7 +421,22 @@ pItemList = do
       s <- Para <$> some (try inlineNoNL)
       traceShowM ("s", (show s))
       return (L.IndentMany Nothing (\ss -> return (s:ss))
-                (Para <$> some inlineNoNL <|> pList))
+                (Para <$> some inlineNoNL <|> pItemList))
+
+pNumberListStart = try $ sc *> many (oneOf ['0'..'9']) *> char '.'
+
+pNumberListCont :: Parser [Block]
+pNumberListCont = do
+  getInput >>= \s -> traceShowM ("pNumberList", s)
+  indentBlock2 scn p
+  where
+    p :: Parser (L.IndentOpt Parser [Block] Block)
+    p = do
+      getInput >>= traceShowM
+      s <- Para <$> some (try inlineNoNL)
+      traceShowM ("s", (show s))
+      return (L.IndentMany Nothing (\ss -> return (s:ss))
+                (Para <$> some inlineNoNL <|> pNumberList))
 
 link :: Parser Inline
 link = try longhandLink <|> try shorthandLink
@@ -569,32 +588,5 @@ parseFromString parser str = do
   setPosition oldPos
   return result
 
-
-
-
-
-list :: Parser Block
-list = bulletList -- <|> numberedList
-
-bulletList :: Parser Block
-bulletList = do
-  startPos <- getPosition
-  char '*'
-  skipSpaces
-  return undefined
-
-
-
-
-
-
-
-
 reservedChars :: [Char]
 reservedChars = "\'`*/!{}>|[]#: "
-
-
-
-
-
-
