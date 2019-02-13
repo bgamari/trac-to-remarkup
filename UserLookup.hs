@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase #-}
 
 module UserLookup
   ( Username, Email
@@ -21,6 +22,8 @@ import Control.Monad.Trans.State
 import Control.Monad.Trans.Maybe
 import Control.Monad.IO.Class
 import Control.Monad.Catch hiding (bracket)
+import Control.Monad (join)
+import Text.Printf (printf)
 
 import Servant.Client
 import Database.PostgreSQL.Simple
@@ -101,108 +104,68 @@ type UserLookupM = MaybeT (StateT UserIdCache ClientM)
 type UserIdCache = M.Map Username UserId
 
 mkUserIdOracle :: Logger -> Connection -> ClientEnv -> IO UserIdOracle
-mkUserIdOracle logger conn clientEnv = do
-    cacheVar <- newMVar mempty
-    let runIt :: Bool -> Username -> StateT UserIdCache IO (Maybe UserId)
-        runIt create username = StateT $ \cache -> do
-            res <- runClientM (runStateT (runMaybeT $ getUserId create $ T.strip username) cache) clientEnv
-            case res of
-              Left exc -> do
-                writeLog logger "RESOLVE USER FAILED" $ show username ++ ": " ++ show exc
-                throwM exc
-              Right res' -> do
-                writeLog logger "RESOLVE USER" $ show username ++ " -> " ++ show (fst res')
-                return res'
-
-    let oracle :: Bool -> Username -> ClientM (Maybe UserId)
-        oracle create = liftIO
-                        . withMVarState cacheVar
-                        . runIt create
-    return $ UserIdOracle { findOrCreateUser = \user -> fromMaybe (error "couldn't resolve user id") <$> oracle True user
-                          , findUser = oracle False
-                          }
+mkUserIdOracle logger conn clientEnv =
+  return UserIdOracle {..}
   where
-    tee :: (Show a, Monad m, MonadIO m) => String -> m a -> m a
-    tee msg a = do
-      x <- a
-      liftIO . writeLog logger "INFO" $ msg ++ show x
-      return x
+    fixUsername :: Text -> Text
+    fixUsername username
+        | username == ""
+        = "unknown"
+        | Just u <- M.lookup username knownUsers
+        = u
+        | otherwise
+        = "trac-" <> sanitizeUsername username
 
-    getUserId :: Bool -> Username -> UserLookupM UserId
-    getUserId create username =
-            tee "tryEmptyUserName" tryEmptyUserName
-        <|> tee "tryCache" tryCache
-        <|> cacheIt (tee "tryOverride" tryOverride)
-        <|> cacheIt (tee "tryLookupName - " tryLookupName)
-        <|> cacheIt (tee "tryLookupTracName - " tryLookupTracName)
-        <|> cacheIt (tee "tryLookupEmail - " tryLookupEmail)
-        <|> cacheIt (tee "tryCreate - " tryCreate)
+    findUser :: Text -> ClientM (Maybe UserId)
+    findUser username = do
+      liftIO $ writeLog logger "FIND-USER" (T.unpack username)
+      let username' = fixUsername username
+      m_email <- liftIO $ getUserAttribute conn Trac.Email username
+      let email = fromMaybe ("trac+"<>username<>"@haskell.org") m_email
+
+      runMaybeT $
+        findUserBy email <|>
+        findUserBy username <|>
+        findUserBy username'
+
+    findUserBy :: Text -> MaybeT ClientM UserId
+    findUserBy nameOrEmail = do
+      liftIO . writeLog logger "FIND-USER-BY" $ T.unpack nameOrEmail
+      MaybeT $ fmap userId <$> findUserByUsername gitlabToken nameOrEmail
+
+    catchToMaybe :: forall m a. (Monad m, MonadIO m, MonadCatch m) => m a -> m (Maybe a)
+    catchToMaybe action =
+      handleAll h $ (Just <$> action) `catch` h
       where
-        username'
-          | Just u <- M.lookup username knownUsers = u
-          | otherwise = "trac-"<>sanitizeUsername username
+        h :: SomeException -> m (Maybe a)
+        h err = do
+          liftIO $ writeLog logger "ERROR" (displayException err)
+          return Nothing
 
-        tryEmptyUserName :: UserLookupM UserId
-        tryEmptyUserName
-          | username == "" = getUserId create "unknown"
-          | otherwise      = empty
+    findOrCreateUser :: Text -> ClientM UserId
+    findOrCreateUser username = do
+      liftIO $ writeLog logger "FIND-OR-CREATE-USER" (T.unpack username)
+      uid <- findUser username >>= \case
+        Nothing -> doCreateUser username
+        Just uid -> return uid
+      catchToMaybe $ addProjectMember gitlabToken project uid Reporter
+      return uid
 
-        tryOverride
-          | Just u <- username `M.lookup` knownUsers = getUserId create u
-          | otherwise      = empty
-
-        tryCache :: UserLookupM UserId
-        tryCache = do
-            cache <- lift get
-            MaybeT $ pure $ M.lookup username cache
-
-        tryLookupName :: UserLookupM UserId
-        tryLookupName = tryLookupName' username
-
-        tryLookupTracName :: UserLookupM UserId
-        tryLookupTracName = tryLookupName' username'
-
-        tryLookupName' :: Username -> UserLookupM UserId
-        tryLookupName' name = do
-            liftIO . writeLog logger "FIND USER BY NAME" $ T.unpack name
-            fmap userId $ MaybeT $ lift $ findUserByUsername gitlabToken name
-
-        tryLookupEmail :: UserLookupM UserId
-        tryLookupEmail = do
-            m_email <- liftIO $ getUserAttribute conn Trac.Email username
-            let cuEmail = fromMaybe ("trac+"<>username<>"@haskell.org") m_email
-            liftIO . writeLog logger "FIND USER BY EMAIL" $ T.unpack cuEmail
-            fmap userId $ MaybeT $ lift $ tee "user by email" $ findUserByEmail gitlabToken cuEmail
-
-        tryCreate :: UserLookupM UserId
-        tryCreate
-          | not create = empty
-          | otherwise = do
-            m_email <- liftIO $ getUserAttribute conn Trac.Email username
-            uidMay <- lift $ do
-              let cuEmail = case m_email of
-                              Nothing -> "trac+"<>username<>"@haskell.org"
-                              Just email -> email
-                  cuName = username
-                  cuUsername = case M.lookup username knownUsers of
-                                 Just u -> u
-                                 Nothing -> username'
-                  cuSkipConfirmation = True
-              liftIO $ writeLog logger "CREATE USER" $ show username <> " (" <> show cuEmail <> ")"
-              lift $ createUserMaybe gitlabToken CreateUser {..}
-            case uidMay of
-              Nothing ->
-                fail "User already exists"
-              Just uid -> do
-                liftIO $ writeLog logger "USER CREATED" $ show username <> " as " <> show uid
-                lift . lift $ addProjectMember gitlabToken project uid Reporter
-                return uid
-
-        cacheIt :: UserLookupM UserId -> UserLookupM UserId
-        cacheIt action = do
-            uid <- action
-            lift $ modify' $ M.insert username uid
-            return uid
+    doCreateUser :: Text -> ClientM UserId
+    doCreateUser username = do
+      liftIO $ writeLog logger "CREATE-USER" (T.unpack username)
+      m_email <- liftIO $ getUserAttribute conn Trac.Email username
+      let cuEmail = case m_email of
+                      Nothing -> "trac+"<>username<>"@haskell.org"
+                      Just email -> email
+          cuName = username
+          cuUsername = case M.lookup username knownUsers of
+                         Just u -> u
+                         Nothing -> fixUsername username
+          cuSkipConfirmation = True
+      liftIO $ writeLog logger "CREATE USER" $ show username <> " (" <> show cuEmail <> ")"
+      uid <- createUser gitlabToken CreateUser {..}
+      return uid
 
 flipPair :: (a, b) -> (b, a)
 flipPair (a, b) = (b, a)
