@@ -29,6 +29,8 @@ import Text.Printf (printf)
 import Network.HTTP.Types
 import qualified Data.Aeson as JSON
 import qualified Data.Map.Strict as Map
+import Text.Email.Validate (canonicalizeEmail)
+import qualified Data.ByteString.UTF8 as UTF8
 
 import Servant.Client
 import Database.PostgreSQL.Simple
@@ -108,6 +110,17 @@ type UserLookupM = MaybeT (StateT UserIdCache ClientM)
 
 type UserIdCache = M.Map Username UserId
 
+extractEmail :: Text -> Maybe Text
+extractEmail =
+  fmap (T.pack . UTF8.toString) . canonicalizeEmail . UTF8.fromString . T.unpack
+
+usernameToEmail :: Text -> Text
+usernameToEmail username
+  | Just email <- extractEmail username
+  = email
+  | otherwise
+  = "trac+" <> sanitizeUsername username <> "@haskell.org"
+
 mkUserIdOracle :: Logger -> Connection -> ClientEnv -> IO UserIdOracle
 mkUserIdOracle logger conn clientEnv =
   return UserIdOracle {..}
@@ -126,7 +139,7 @@ mkUserIdOracle logger conn clientEnv =
       liftIO $ writeLog logger "FIND-USER" (T.unpack username)
       let username' = fixUsername username
       m_email <- liftIO $ getUserAttribute conn Trac.Email username
-      let email = fromMaybe ("trac+"<>username<>"@haskell.org") m_email
+      let email = fromMaybe (usernameToEmail username) m_email
 
       runMaybeT $
         findUserBy email <|>
@@ -177,13 +190,9 @@ mkUserIdOracle logger conn clientEnv =
     doCreateUser username = do
       liftIO $ writeLog logger "CREATE-USER" (T.unpack username)
       m_email <- liftIO $ getUserAttribute conn Trac.Email username
-      let cuEmail = case m_email of
-                      Nothing -> "trac+"<>username<>"@haskell.org"
-                      Just email -> email
+      let cuEmail = fromMaybe (usernameToEmail username) m_email
           cuName = username
-          cuUsername = case M.lookup username knownUsers of
-                         Just u -> u
-                         Nothing -> fixUsername username
+          cuUsername = fixUsername username
           cuSkipConfirmation = True
       liftIO $ writeLog logger "CREATE USER" $ show username <> " (" <> show cuEmail <> ")"
       uid <- createUser gitlabToken CreateUser {..}
