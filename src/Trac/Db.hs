@@ -306,6 +306,7 @@ toTypeOfFailure t = case t of
 toTicketResolution :: Maybe Text -> TicketResolution
 toTicketResolution mt = case mt' of
     Nothing -> Unresolved
+    Just "" -> Unresolved
     Just "none" -> ResolvedNoReason
     Just "wontfix" -> ResolvedWon'tFix
     Just "fixed" -> ResolvedFixed
