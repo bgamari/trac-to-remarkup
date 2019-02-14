@@ -196,7 +196,7 @@ createTicket :: Logger
              -> ClientM IssueIid
 createTicket logger' milestoneMap userIdOracle commentCache t = do
     let logger = liftLogger logger'
-    writeLog logger "TICKET-NR" . show $ ticketNumber t
+    writeLog logger "CREATE-ISSUE" ""
     creatorUid <- findOrCreateUser userIdOracle $ ticketCreator t
     descriptionBody <- liftIO $
           tracToMarkdown logger' commentCache (ticketNumber t) $
@@ -211,7 +211,6 @@ createTicket logger' milestoneMap userIdOracle commentCache t = do
             , fieldsJSON fields
             ]
         fields = ticketFields t
-    writeLog logger "FIELDS" . show $ fields
     ownerUid <- case runIdentity . ticketOwner $ fields of
                   Unowned -> return []
                   OwnedBy user -> (:[]) <$> findOrCreateUser userIdOracle (getTracUser user)
@@ -225,7 +224,6 @@ createTicket logger' milestoneMap userIdOracle commentCache t = do
                             , ciWeight = Just $ prioToWeight $ runIdentity $ ticketPriority fields
                             , ciAssignees = Just ownerUid
                             }
-    writeLog logger "ISSUE" . show $ issue
     let ignore404 (FailureResponse resp)
           | 404 <- statusCode $ responseStatusCode resp
           = return ()
