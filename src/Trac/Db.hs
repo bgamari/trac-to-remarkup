@@ -313,6 +313,10 @@ toTicketResolution mt = case mt' of
     Just "invalid" -> ResolvedInvalid
     Just "duplicate" -> ResolvedDuplicate
     Just "worksforme" -> ResolvedWorksForMe
+    Just "accepted" -> ResolvedAccepted
+    Just "outofdate" -> ResolvedOutOfDate
+    Just "rejected" -> ResolvedRejected
+    Just "remind" -> ResolvedRemind
     Just _ -> error $ "Unknown ticket resolution: " ++ show mt
   where
     mt' = T.toLower . T.filter isAlphaNum <$> mt

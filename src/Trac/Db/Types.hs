@@ -338,6 +338,11 @@ data TicketResolution
     | ResolvedWon'tFix
     | ResolvedWorksForMe
     | ResolvedInvalid
+    | ResolvedOther
+    | ResolvedAccepted
+    | ResolvedOutOfDate
+    | ResolvedRejected
+    | ResolvedRemind
     deriving stock (Eq, Show, Generic)
     deriving anyclass (ToJSON)
 
