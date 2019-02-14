@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module UserLookup
   ( Username, Email
@@ -22,8 +23,12 @@ import Control.Monad.Trans.State
 import Control.Monad.Trans.Maybe
 import Control.Monad.IO.Class
 import Control.Monad.Catch hiding (bracket)
+import Control.Monad.Except
 import Control.Monad (join)
 import Text.Printf (printf)
+import Network.HTTP.Types
+import qualified Data.Aeson as JSON
+import qualified Data.Map.Strict as Map
 
 import Servant.Client
 import Database.PostgreSQL.Simple
@@ -133,13 +138,30 @@ mkUserIdOracle logger conn clientEnv =
       liftIO . writeLog logger "FIND-USER-BY" $ T.unpack nameOrEmail
       MaybeT $ fmap userId <$> findUserByUsername gitlabToken nameOrEmail
 
-    catchToMaybe :: forall m a. (Monad m, MonadIO m, MonadCatch m) => m a -> m (Maybe a)
+    catchToMaybe :: forall m a. (Monad m, MonadIO m, MonadCatch m, MonadError ServantError m) => m a -> m (Maybe a)
     catchToMaybe action =
-      handleAll h $ (Just <$> action) `catch` h
+      handleAll h . flip catchError hServant $ (Just <$> action)
       where
+        hServant :: ServantError -> m (Maybe a)
+        hServant (FailureResponse
+                   Response
+                     { responseStatusCode = Status { statusCode = 409 }
+                     , responseBody = body
+                     }
+                 )
+          | Just bodyMap <- JSON.decode body
+          , Just msg <- Map.lookup ("message" :: Text) bodyMap
+          = do
+              liftIO $ writeLog logger "SERVANT" msg
+              return Nothing
+        hServant err
+          = do
+              liftIO $ writeLog logger "SERVANT-ERROR" (displayException err)
+              return Nothing
+
         h :: SomeException -> m (Maybe a)
         h err = do
-          liftIO $ writeLog logger "ERROR" (displayException err)
+          liftIO $ writeLog logger "IO-ERROR" (displayException err)
           return Nothing
 
     findOrCreateUser :: Text -> ClientM UserId

@@ -426,41 +426,41 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
     createNote fields' = do
         authorUid <- findOrCreateUser userIdOracle $ changeAuthor tc
         commentNumber <- findCommentNumber
+        withContext logger (show commentNumber) $ do
+          -- Compose a note body. In some cases, we don't want to create a note,
+          -- because the information we could put in there isn't useful, or because
+          -- we already store it elsewhere. In those cases, we leave the body empty,
+          -- and check for that later.
+          mrawBody <- liftIO $
+                        maybe
+                            (return Nothing)
+                            (fmap Just . tracToMarkdown logger' commentCache t)
+                            (changeComment tc)
+          let body = T.unlines . catMaybes $
+                  [ mrawBody >>= justWhen (not . isCommitComment $ tc)
+                  , justWhen (not $ isTrivialFieldUpdate fields')
+                      $ fieldsTable
+                          mempty
+                          -- [ ("User", changeAuthor tc) -- ]
+                          fields'
+                  , justWhen (not $ isTrivialFieldUpdate $ filterFieldChanges $ changeFields tc)
+                      $ fieldsJSON $ filterFieldChanges $ changeFields tc
+                  ]
 
-        -- Compose a note body. In some cases, we don't want to create a note,
-        -- because the information we could put in there isn't useful, or because
-        -- we already store it elsewhere. In those cases, we leave the body empty,
-        -- and check for that later.
-        mrawBody <- liftIO $
-                      maybe
-                          (return Nothing)
-                          (fmap Just . tracToMarkdown logger' commentCache t)
-                          (changeComment tc)
-        let body = T.unlines . catMaybes $
-                [ mrawBody >>= justWhen (not . isCommitComment $ tc)
-                , justWhen (not $ isTrivialFieldUpdate fields')
-                    $ fieldsTable
-                        mempty
-                        -- [ ("User", changeAuthor tc) -- ]
-                        fields'
-                , justWhen (not $ isTrivialFieldUpdate $ filterFieldChanges $ changeFields tc)
-                    $ fieldsJSON $ filterFieldChanges $ changeFields tc
-                ]
-
-        writeLog logger "NOTE" $ show body
-        let discard = T.all isSpace body
-        mcinId <- if discard
-                      then do
-                        writeLog logger "COMMENT-SKIPPED" ""
-                        return Nothing
-                      else do
-                        let note = CreateIssueNote { cinBody = body
-                                                   , cinCreatedAt = Just $ changeTime tc
-                                                   }
-                        cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
-                        writeLog logger "NOTE-CREATED" $ show commentNumber ++ " -> " ++ show cinResp
-                        return (Just . NoteRef . inrId $ cinResp)
-        return mcinId
+          writeLog logger "NOTE" $ show body
+          let discard = T.all isSpace body
+          mcinId <- if discard
+                        then do
+                          writeLog logger "COMMENT-SKIPPED" ""
+                          return Nothing
+                        else do
+                          let note = CreateIssueNote { cinBody = body
+                                                     , cinCreatedAt = Just $ changeTime tc
+                                                     }
+                          cinResp <- createIssueNote gitlabToken (Just authorUid) project iid note
+                          writeLog logger "NOTE-CREATED" $ show commentNumber ++ " -> " ++ show cinResp
+                          return (Just . NoteRef . inrId $ cinResp)
+          return mcinId
 
     -- Update our comment cache. Depending on what we did above, we pick an
     -- apppropriate note reference (pointing to a Note, a Commit, or marking
