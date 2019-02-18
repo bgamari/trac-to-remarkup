@@ -98,25 +98,25 @@ findUserByUsername tok username = do
                _ -> error $ "Multiple users with id "<>show username<>": "<>show res
 
 ----------------------------------------------------------------------
--- findUserByEmail
+-- searchUsers
 ----------------------------------------------------------------------
 
-type FindUserByEmailAPI =
+type SearchUserAPI =
     GitLabRoot :> "users"
     :> QueryParam "search" Text
     :> Get '[JSON] [User]
 
+searchUsers :: AccessToken -> Text -> ClientM [User]
+searchUsers tok emailOrUsername = do
+    client (Proxy :: Proxy SearchUserAPI) (Just tok) (Just emailOrUsername)
+
 findUserByEmail :: AccessToken -> Text -> ClientM (Maybe User)
 findUserByEmail tok email = do
-    res <- findUsersByEmail tok email
-    return $ case res of
+    res <- searchUsers tok email
+    return $ case filter ((== Just email) . userEmail) res of
                [] -> Nothing
                [user] -> Just user
-               _ -> error $ "Multiple users with email "<>show email<>": "<>show res
-
-findUsersByEmail :: AccessToken -> Text -> ClientM [User]
-findUsersByEmail tok email = do
-    client (Proxy :: Proxy FindUserByEmailAPI) (Just tok) (Just email)
+               _ -> error $ "Multiple users found for "<>show email<>": "<>show res
 
 
 ----------------------------------------------------------------------

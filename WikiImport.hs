@@ -132,7 +132,7 @@ buildWiki logger fast keepGit commentCache conn = do
         muser <- do
           (pure $ findKnownUser wpAuthor)
             |$| (listToMaybe <$> findUsersByUsername gitlabToken wpAuthor)
-            |$| (listToMaybe <$> findUsersByEmail gitlabToken wpAuthor)
+            |$| (findUserByEmail gitlabToken wpAuthor)
             |$| do
               -- no user found, let's fake one
               liftIO $ writeLog logger "AUTHOR-MISMATCH" (T.unpack wpAuthor)

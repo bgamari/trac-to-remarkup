@@ -151,14 +151,24 @@ mkUserIdOracle logger conn clientEnv =
       let email = fromMaybe (usernameToEmail username) m_email
 
       runMaybeT $
-        findUserBy email <|>
-        findUserBy username <|>
-        findUserBy username'
+        mfindUserByEmail email <|>
+        mfindUserByUsername username <|>
+        mfindUserByUsername username'
 
-    findUserBy :: Text -> MaybeT ClientM UserId
-    findUserBy nameOrEmail = do
-      liftIO . writeLog logger "FIND-USER-BY" $ T.unpack nameOrEmail
-      MaybeT $ teeMay logger "FIND-USER-BY" $ fmap userId <$> findUserByEmail gitlabToken nameOrEmail
+    mfindUserByUsername :: Text -> MaybeT ClientM UserId
+    mfindUserByUsername name = do
+      liftIO . writeLog logger "FIND-USER-BY-USERNAME" $
+        T.unpack name
+      MaybeT $ teeMay logger "FIND-USER-BY-USERNAME" $
+        fmap userId <$> findUserByUsername gitlabToken name
+
+    mfindUserByEmail :: Text -> MaybeT ClientM UserId
+    mfindUserByEmail name = do
+      liftIO . writeLog logger "FIND-USER-BY-EMAIL" $
+        T.unpack name
+      MaybeT $ teeMay logger "FIND-USER-BY-EMAIL" $
+        fmap userId <$> findUserByEmail gitlabToken name
+
 
     catchToMaybe :: forall m a. (Monad m, MonadIO m, MonadCatch m, MonadError ServantError m) => m a -> m (Maybe a)
     catchToMaybe action =
