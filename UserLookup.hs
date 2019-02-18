@@ -121,6 +121,15 @@ usernameToEmail username
   | otherwise
   = "trac+" <> sanitizeUsername username <> "@haskell.org"
 
+teeMay logger msg action = do
+  action >>= \case
+    Nothing -> do
+      liftIO $ writeLog logger msg "not found"
+      return Nothing
+    Just x -> do
+      liftIO $ writeLog logger msg $ "found " <> show x
+      return (Just x)
+
 mkUserIdOracle :: Logger -> Connection -> ClientEnv -> IO UserIdOracle
 mkUserIdOracle logger conn clientEnv =
   return UserIdOracle {..}
@@ -149,7 +158,7 @@ mkUserIdOracle logger conn clientEnv =
     findUserBy :: Text -> MaybeT ClientM UserId
     findUserBy nameOrEmail = do
       liftIO . writeLog logger "FIND-USER-BY" $ T.unpack nameOrEmail
-      MaybeT $ fmap userId <$> findUserByUsername gitlabToken nameOrEmail
+      MaybeT $ teeMay logger "FIND-USER-BY" $ fmap userId <$> findUserByEmail gitlabToken nameOrEmail
 
     catchToMaybe :: forall m a. (Monad m, MonadIO m, MonadCatch m, MonadError ServantError m) => m a -> m (Maybe a)
     catchToMaybe action =
@@ -158,14 +167,15 @@ mkUserIdOracle logger conn clientEnv =
         hServant :: ServantError -> m (Maybe a)
         hServant (FailureResponse
                    Response
-                     { responseStatusCode = Status { statusCode = 409 }
+                     { responseStatusCode = Status { statusCode = code }
                      , responseBody = body
                      }
                  )
           | Just bodyMap <- JSON.decode body
           , Just msg <- Map.lookup ("message" :: Text) bodyMap
           = do
-              liftIO $ writeLog logger "SERVANT" msg
+              liftIO $ writeLog logger "SERVANT" $
+                printf "%d: %s" code (msg :: Text)
               return Nothing
         hServant err
           = do
