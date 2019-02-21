@@ -116,7 +116,8 @@ extractEmail =
 
 usernameToEmail :: Text -> Text
 usernameToEmail username
-  | Just email <- extractEmail username
+  | "@" `T.isInfixOf` username
+  , Just email <- extractEmail username
   = email
   | otherwise
   = "trac+" <> sanitizeUsername username <> "@haskell.org"
@@ -210,7 +211,7 @@ mkUserIdOracle logger conn clientEnv =
     doCreateUser username = do
       liftIO $ writeLog logger "CREATE-USER" (T.unpack username)
       m_email <- liftIO $ getUserAttribute conn Trac.Email username
-      let cuEmail = fromMaybe (usernameToEmail username) m_email
+      let cuEmail = usernameToEmail $ fromMaybe username m_email
           cuName = username
           cuUsername = fixUsername username
           cuSkipConfirmation = True
