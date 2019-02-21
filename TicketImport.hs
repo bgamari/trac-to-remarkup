@@ -16,8 +16,9 @@ import Data.Maybe
 import Data.String
 import Control.Monad.IO.Class
 import Control.Monad.Error.Class
-import Control.Monad.Catch (handleAll)
+import Control.Monad.Catch (handleAll, SomeException, fromException, toException)
 import Data.Foldable
+import Text.Printf (printf)
 
 import Data.Functor.Identity
 import Data.Text (Text)
@@ -28,6 +29,7 @@ import qualified Data.Map.Strict as M
 
 import Network.HTTP.Types.Status
 import Data.Aeson.Text as Aeson
+import Data.Aeson as Aeson
 import Servant.Client
 
 import GitLab.Tickets
@@ -476,13 +478,27 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
           (M.lookup (unIssueIid iid) <$> readMVar commentCache))
           >>= writeLog logger "STORE-COMMENT" . show
 
-    onError :: (Show e) => a -> e -> ClientM a
-    onError d err = do
-        writeLog logger "ERROR" $ "Failed to execute ticket mutation step: " ++ show err
-        pure d
+    onError :: a -> SomeException -> ClientM a
+    onError d err
+      | Just (FailureResponse
+                   Response
+                     { responseStatusCode = Status { statusCode = code }
+                     , responseBody = body
+                     }
+                 ) <- fromException err
+      , Just bodyMap <- Aeson.decode body
+      , Just msg <- M.lookup ("message" :: Text) bodyMap
+      = do
+          writeLog logger "SERVANT" $
+            printf "%d: %s" code (msg :: Text)
+          pure d
+      | otherwise
+      = do
+          writeLog logger "ERROR" $ "Failed to execute ticket mutation step: " ++ show err
+          pure d
 
     catchAndLogErrors :: a -> ClientM a -> ClientM a
-    catchAndLogErrors d = handleAll (onError d) . flip catchError (onError d)
+    catchAndLogErrors d = handleAll (onError d) . flip catchError (onError d . toException)
 
 fieldsJSON :: forall f. (FieldToJSON f, Functor f, ConcatFields f, Show (Fields f))
            => Fields f -> T.Text
