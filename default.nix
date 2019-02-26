@@ -9,7 +9,8 @@ let
       , filepath, http-client-tls, http-types, megaparsec
       , mtl, NoTrace, postgresql-simple, pretty-show, process, servant
       , servant-client, silently, split, stdenv, stm, temporary, text
-      , time, transformers, taggy, lifted-base
+      , time, transformers, taggy, lifted-base, optparse-applicative
+      , email-validate
       }:
       mkDerivation {
         pname = "trac-to-remarkup";
@@ -20,13 +21,13 @@ let
         libraryHaskellDepends = [
           aeson base bytestring casing containers megaparsec mtl NoTrace
           postgresql-simple process servant servant-client split temporary
-          text time taggy lifted-base
+          text time taggy lifted-base email-validate
         ];
         executableHaskellDepends = [
           lifted-async base bytestring connection containers data-default directory
           exceptions filepath http-client-tls http-types
           megaparsec mtl postgresql-simple servant-client stm text time
-          transformers
+          transformers optparse-applicative
         ];
         testHaskellDepends = [
           base directory filepath pretty-show silently
