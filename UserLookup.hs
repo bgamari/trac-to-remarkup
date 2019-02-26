@@ -55,6 +55,12 @@ knownUsersList =
     , "marlowsd@gmail.com" .= "simonmar"
     , "Richard Eisenberg <eir@cis.upenn.edu>" .= "rae"
     , "p.capriotti@gmail.com" .= "pcapriotti"
+      -- Inconsistent email capitalization
+    , "dfeuer" .= "treeowl"
+      -- @well-typed.com email already claimed
+    , "MikolajKonarski" .= "Mikolaj"
+      -- Email conflict
+    , "bjmprice" .= "brprice"
     , "Thomas Miedema <thomasmiedema@gmail.com>" .= "thomie"
     , "pho@cielonegro.org" .= "pho_at_cielonegro.org"
     , "Favonia" .= "favonia"
