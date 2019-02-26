@@ -7,22 +7,22 @@ installation.
 
 1. Reset GitLab database
 
-    In the case of NixOS:
-    ```
-    sudo systemctl stop gitlab
-    sudo systemctl stop gitlab-workhorse
-    sudo systemctl stop gitlab-sidekiq
-    sudo systemctl stop gitaly
-    echo 'DROP DATABASE gitlab; DROP ROLE gitlab;' | sudo -u postgres psql 
-    sudo rm -Rf /var/gitlab/state
-    sudo systemd-tmpfiles --create
-    sudo systemctl start gitlab
-    sudo systemctl start gitlab-workhorse
-    sudo systemctl start gitlab-sidekiq
-    sudo systemctl start gitaly
-    # for post-import ticket fix-up
-    sudo -u postgres psql gitlab -c 'GRANT SELECT, INSERT, UPDATE ON TABLE issues TO ben;'
-  ```
+   In the case of NixOS:
+   ```
+   sudo systemctl stop gitlab
+   sudo systemctl stop gitlab-workhorse
+   sudo systemctl stop gitlab-sidekiq
+   sudo systemctl stop gitaly
+   echo 'DROP DATABASE gitlab; DROP ROLE gitlab;' | sudo -u postgres psql 
+   sudo rm -Rf /var/gitlab/state
+   sudo systemd-tmpfiles --create
+   sudo systemctl start gitlab
+   sudo systemctl start gitlab-workhorse
+   sudo systemctl start gitlab-sidekiq
+   sudo systemctl start gitaly
+   # for post-import ticket fix-up
+   sudo -u postgres psql gitlab -c 'GRANT SELECT, INSERT, UPDATE ON TABLE issues TO ben;'
+   ```
   
 1. Create a `ghc` group.
 1. Create a `ghc` project in said group.
