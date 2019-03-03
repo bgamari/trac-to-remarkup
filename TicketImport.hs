@@ -125,7 +125,7 @@ keywordLabels =
         , passthru "debugger"
         , ("synonyms", "pattern synonyms")  -- generally arises from typos
         , passthru "cpp"
-        , ("TypedTemplateHaskell", "typed TemplateHaskell")
+        , ("TypedTemplateHaskell", "typed TemplateHaskell" <> "TemplateHaskell")
         , passthru "strings"
         , passthru "clang"
         , ("FloatOut", "float-out")
@@ -171,6 +171,53 @@ typeOfFailureLabels t =
       RuntimePerformance        -> "runtime perf"
       OtherFailure              -> mempty
 
+componentLabels :: Text -> Labels
+componentLabels "Build System (Hadrian)"  = "hadrian"
+componentLabels "Build System (Make)"     = "make build system"
+componentLabels "Documentation"           = "documentation"
+componentLabels "Compiler (LLVM)"         = "LLVM backend"
+componentLabels "Compiler (NCG)"          = "NCG backend"
+componentLabels "Compiler (Type checker)" = "typechecker"
+componentLabels "Compiler (Linking)"      = "linking"
+componentLabels "Compiler (Debugging)"    = "debug information"
+componentLabels "Compiler (Parser)"       = "parser"
+componentLabels "Compiler (FFI)"          = "FFI"
+componentLabels "Compiler (CodeGen)"      = "code generation"
+componentLabels "Driver"                  = "driver"
+componentLabels "Data Parallel Haskell"   = "Data Parallel Haskell"
+componentLabels "GHCi"                    = "GHCi"
+componentLabels "GHC API"                 = "GHC API"
+componentLabels "Runtime System (Linker)" = "RTS" <> "linking"
+componentLabels "Runtime System"          = "RTS"
+componentLabels "NoFib benchmark suite"   = "nofib"
+componentLabels "Test Suite"              = "testsuite"
+componentLabels "Template Haskell"        = "TemplateHaskell"
+componentLabels "Code Coverage"           = "HPC"
+componentLabels "Continuous Integration"  = "infrastructure"
+componentLabels "Trac & Git"              = "infrastructure"
+componentLabels "Profiling"               = "profiling"
+componentLabels "libraries/stm"           = "STM"
+componentLabels "libraries/compact"       = "compact normal forms"
+componentLabels "Package system"          = "package system"
+componentLabels "ghc-pkg"                 = "ghc-pkg"
+-- Core libraries
+componentLabels "Core Libraries"          = "core libraries"
+componentLabels "Prelude"                 = "core libraries"
+componentLabels "libraries/base"          = "core libraries"
+componentLabels "libraries/haskell2010"   = "core libraries"
+componentLabels "libraries/haskell98"     = "core libraries"
+-- External projects
+componentLabels "hsc2hs"                  = "external-hsc2hs"
+componentLabels "libraries/old-time"      = "external-old-time"
+componentLabels "libraries/pretty"        = "external-pretty"
+componentLabels "libraries/hoopl"         = "external-hoopl"
+componentLabels "libraries/process"       = "external-process"
+componentLabels "libraries/random"        = "external-random"
+componentLabels "libraries/unix"          = "external-unix"
+componentLabels "libraries/directory"     = "external-directory"
+-- Other
+componentLabels _                         = mempty
+
 ticketTypeLabel :: TicketType -> Labels
 ticketTypeLabel Bug = "bug"
 ticketTypeLabel Task = "task"
@@ -179,12 +226,18 @@ ticketTypeLabel MergeReq = "backport request"
 
 fieldLabels :: Fields Update -> AddRemove Labels
 fieldLabels fields =
-    add "Trac import" <> keywordLbls <> failureLbls <> typeLbls <> statusLbls
+    add "Trac import"
+    <> keywordLbls
+    <> failureLbls
+    <> typeLbls
+    <> statusLbls
+    <> componentLbls
   where
     keywordLbls = toAddRemove id $ fmap (foldMap keywordLabels) (ticketKeywords fields)
     typeLbls = toAddRemove ticketTypeLabel (ticketType fields)
     failureLbls = toAddRemove typeOfFailureLabels (ticketTypeOfFailure fields)
     statusLbls = toAddRemove toStatusLabel (ticketStatus fields)
+    componentLbls = toAddRemove componentLabels (ticketComponent fields)
 
     toStatusLabel Merge = "backport"
     toStatusLabel Upstream = "upstream"
