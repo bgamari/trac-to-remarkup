@@ -58,7 +58,19 @@ Trac import
 1. Clear the `mailers` sidekiq queue again before reenabling mail
 1. `sudo -u postgres psql gitlab -c 'REVOKE SELECT, INSERT, UPDATE ON TABLE issues FROM ben;'`
 
-Fixup
------
+Wiki Fix-up
+-----------
 
-1. Clone `git@gitlab.haskell.org:ghc/ghc.wiki.git` and run `fixup-wiki.sh` and `squash-wiki.py`
+```
+git clone git@gitlab.haskell.org:ghc/ghc.wiki.git
+cd ghc.wiki
+git branch unsquashed
+../fixup-wiki.sh
+../squash-wiki.py
+../make-index.py
+git add index.md
+git commit -m 'Add index'
+git checkout master
+git reset --hard all-squashed
+git push origin master unsquashed -f
+```

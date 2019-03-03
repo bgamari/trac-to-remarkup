@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import List, Dict
 
-root = Path('ghc.wiki')
+root = Path.cwd()
 
 class WikiName(object):
     def __init__(self, name: str) -> None:
