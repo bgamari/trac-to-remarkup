@@ -243,20 +243,21 @@ inline (WikiLink label url) = longLink url label
 inline (TicketLink Nothing n Nothing) =
   -- shorthand ticket link: we can do this nicely
   return $ char '#' <> text (show n)
-inline (TicketLink mlabel n Nothing) = do
+inline (TicketLink (Just label) n Nothing) = do
   base <- asks ctxBaseUrl
   org <- asks ctxOrg
   proj <- asks ctxProject
   let url = base <> "/" <> org <> "/" <> proj <> "/issues/" <> show n
-  longLink url $ fromMaybe [Str url] mlabel
+  longLink url label
 inline (TicketLink mlabel n (Just c)) = do
   base <- asks ctxBaseUrl
   org <- asks ctxOrg
   proj <- asks ctxProject
   let url = base <> "/" <> org <> "/" <> proj <> "/issues/" <> show n <> "#note_" <> show c
   case mlabel of
-    Just label -> longLink url $ fromMaybe [Str url] mlabel
-    Nothing    -> return $ text url
+    Just label -> longLink url label
+    Nothing    -> let label = "ticket:" <> show n <> "#" <> "comment:" <> show c
+                  in longLink url [Str label]
 inline (GitCommitLink is hash mrepo) = do
   base <- asks ctxBaseUrl
   org <- asks ctxOrg
