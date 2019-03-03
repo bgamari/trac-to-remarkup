@@ -52,6 +52,8 @@ Trac import
 1. Push `ghc/ghc` repo
 1. Run  `create-mirrors.py`
 1. Clear the `mailers` sidekiq queue
+1. Run `sudo -u postgres bash diff-ticket-lists.sh` to verify that there are no
+   unexpectedly-missing tickets.
 1. Run `git push git@gitlab.haskell.org:ghc/ghc
    origin/master:refs/heads/magic-carpet-ride` to trigger reprocessing of issue
    mentions in commits
