@@ -20,7 +20,7 @@ for f in root.rglob('*.md'):
     f = f.relative_to(root)
 
     x = files # type: WikiName
-    for p in list(f.parents)[:-1]:
+    for p in reversed(list(f.parents)[:-1]):
         x = x.child(p.name)
 
     x = x.child(f.stem)
@@ -31,7 +31,7 @@ def make_index(path: List[str], x: WikiName, depth: int) -> List[str]:
     name = x.name
     if x.is_page:
         target = '/'.join(path)
-        name = f'[{name}](./{target}.md)'
+        name = f'[{name}](./{target})'
 
     entries = [f'{indent}* {name}']
     for _,y in sorted(x.children.items()):
