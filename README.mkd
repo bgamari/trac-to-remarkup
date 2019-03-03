@@ -5,12 +5,8 @@ Usage
 [patched](https://gitlab.com/bgamari/gitlab-ce/tree/haskell-import-ee) GitLab
 installation.
 
-1. Restore Trac backup:
-   ```
-   echo 'DROP DATABASE trac_ghc; CREATE DATABASE trac_ghc;' | sudo -u postgres psql
-   echo 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO ben;' | sudo -u postgres psql trac_ghc
-   xzcat trac_ghc.sql.xz | sudo -u postgres psql trac_ghc
-   ```
+Test import preparation
+-----------------------
 
 1. Reset GitLab database
 
@@ -34,6 +30,17 @@ installation.
 1. Create a `ghc` group.
 1. Create a `ghc` project in said group.
 1. Create an administrator account called `trac-import`
+
+Trac import
+-----------
+
+1. Restore Trac backup:
+   ```
+   echo 'DROP DATABASE trac_ghc; CREATE DATABASE trac_ghc;' | sudo -u postgres psql
+   echo 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO ben;' | sudo -u postgres psql trac_ghc
+   xzcat trac_ghc.sql.xz | sudo -u postgres psql trac_ghc
+   ```
+1. Shut down `postfix` to ensure no mail makes it out.
 1. Add an SSH key for this user so the import script can push the wiki
 1. Create an access token for this user
 1. Copy `Settings.hs.dist` into `Settings.hs`
