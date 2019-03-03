@@ -11,6 +11,6 @@ sed -i -e 's%/trac/ghc/wiki/%%g' *.md
 git add -u
 git commit -m "Fix up Trac wiki links"
 
-rename gh-c- ghc- status/*
-git add status
+rename gh-c- ghc- * status/*
+git add .
 git commit -m 'Fix GHC page names'
