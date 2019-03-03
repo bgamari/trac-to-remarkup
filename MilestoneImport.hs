@@ -1,10 +1,11 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module MilestoneImport 
+module MilestoneImport
   ( MilestoneMap
   , makeMilestones
   ) where
 
+import Data.Maybe (isJust)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Error.Class
@@ -41,6 +42,14 @@ makeMilestones logger actuallyMakeThem conn = do
                               , cmDueDate = mDue
                               , cmStartDate = Nothing
                               }
+        when (isJust mCompleted)
+            $ editMilestone logger gitlabToken Nothing project mid
+            $ EditMilestone { emTitle = Nothing
+                            , emDescription = Nothing
+                            , emDueDate = Nothing
+                            , emStartDate = Nothing
+                            , emStateEvent = Just CloseMilestone
+                            }
         return $ M.singleton mName mid
 
     onError :: (MonadIO m, Exception a) => a -> m MilestoneMap

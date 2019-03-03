@@ -306,6 +306,52 @@ createMilestone logger tok sudo prj cm = do
     return mid
 
 ----------------------------------------------------------------------
+-- editMilestone
+----------------------------------------------------------------------
+
+type EditMilestoneAPI =
+    GitLabRoot :> "projects"
+    :> Capture "id" ProjectId :> "milestones"
+    :> Capture "milestone id" MilestoneId
+    :> ReqBody '[JSON] EditMilestone
+    :> SudoParam
+    :> Put '[JSON] ()
+
+data MilestoneStateEvent = CloseMilestone | ActivateMilestone
+                         deriving (Show)
+
+instance ToJSON MilestoneStateEvent where
+  toJSON CloseMilestone = "close"
+  toJSON ActivateMilestone = "activate"
+
+data EditMilestone
+    = EditMilestone { emTitle :: Maybe Text
+                    , emDescription :: Maybe Text
+                    , emDueDate :: Maybe UTCTime
+                    , emStartDate :: Maybe UTCTime
+                    , emStateEvent :: Maybe MilestoneStateEvent
+                    }
+                    deriving (Show)
+
+instance ToJSON EditMilestone where
+    toJSON EditMilestone{..} = object
+        $ catMaybes
+        [ "title" .=? emTitle
+        , "description" .=? emDescription
+        , "due_date" .=? emDueDate
+        , "start_date" .=? emStartDate
+        , "state_event" .=? emStateEvent
+        ]
+
+editMilestone :: Logger
+              -> AccessToken -> Maybe UserId
+              -> ProjectId -> MilestoneId -> EditMilestone
+              -> ClientM ()
+editMilestone logger tok sudo prj mid em = do
+    liftIO $ writeLog logger "EDIT-MILESTONE" $ show em
+    client (Proxy :: Proxy EditMilestoneAPI) (Just tok) prj mid em sudo
+
+----------------------------------------------------------------------
 -- listMilestones
 ----------------------------------------------------------------------
 
