@@ -456,7 +456,7 @@ shorthandLink = do
 longhandLink :: Parser Inline
 longhandLink = do
   try (string "[[")
-  withoutDesc <|> withDesc
+  withDesc <|> withoutDesc
   where
     withoutDesc = do
       l <- try $ manyTill anyChar (try $ string "]]")
