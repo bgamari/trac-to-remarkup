@@ -55,7 +55,7 @@ Trac import
 1. Run `sudo -u postgres bash diff-ticket-lists.sh` to verify that there are no
    unexpectedly-missing tickets.
 1. Run `git push git@gitlab.haskell.org:ghc/ghc
-   origin/master:refs/heads/magic-carpet-ride` to trigger reprocessing of issue
+   origin/master:refs/heads/wip/magic-carpet-ride` to trigger reprocessing of issue
    mentions in commits
 1. Clear the `mailers` sidekiq queue again before reenabling mail
 1. `sudo -u postgres psql gitlab -c 'REVOKE SELECT, INSERT, UPDATE ON TABLE issues FROM ben;'`
