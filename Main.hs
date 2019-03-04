@@ -91,15 +91,6 @@ testScraperMode =
 main :: IO ()
 main = do
     logger <- makeStdoutLogger
-    conn <- connectPostgreSQL tracDsn
-    mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
-    let env = mkClientEnv mgr gitlabApiBaseUrl
-    userIdOracle <- mkUserIdOracle logger conn env
-
-    (finishedMutations, finishMutation) <- openStateFile mutationStateFile
-
-    (commentCache, storeComment) <- openCommentCacheFile logger commentCacheFile
-
     the_mode <- execParser $ info (helper <*> mode) mempty
     case the_mode of
       TestParser -> do
@@ -135,6 +126,15 @@ main = do
           putStrLn dst
 
       Import{..} -> do
+        conn <- connectPostgreSQL tracDsn
+        mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
+        let env = mkClientEnv mgr gitlabApiBaseUrl
+        userIdOracle <- mkUserIdOracle logger conn env
+
+        (finishedMutations, finishMutation) <- openStateFile mutationStateFile
+
+        (commentCache, storeComment) <- openCommentCacheFile logger commentCacheFile
+
         milestoneMap <- either (error . show) id <$> runClientM (makeMilestones logger (not skipMilestones) conn) env
 
         unless skipTickets $ Logging.withContext logger "tickets" $ printErrors logger $ do
