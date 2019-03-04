@@ -169,8 +169,13 @@ main = do
 
         unless skipWiki
           $ Logging.withContext logger "wiki" $ printErrors logger
-          $ void
-          $ runClientM (buildWiki logger skipWikiHistory keepWikiGit commentCache conn) env >>= throwLeft
+          $ void $ do
+              runClientM (buildWiki logger skipWikiHistory keepWikiGit commentCache conn) env >>= throwLeft
+              nameMapping <- buildWikiNameMapping conn
+              writeFile "wiki-map" $ unlines
+                [ T.unpack old ++ "\t" ++ new
+                | (old, new) <- nameMapping
+                ]
 
         unless skipTicketFixup
           $ Logging.withContext logger "ticket fixup" $ printErrors logger

@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module WikiImport (buildWiki) where
+module WikiImport (buildWiki, buildWikiNameMapping) where
 
 import Control.Monad
 import Control.Monad.Catch hiding (bracket)
@@ -40,6 +40,13 @@ import Git
 import ImportState
 import UserLookup
 import Settings
+
+buildWikiNameMapping :: Connection -> IO [(T.Text, String)]
+buildWikiNameMapping conn = do
+  pages <- getWikiPagesFast conn
+  return [ (wpName page, tracWikiBaseNameToGitlab . T.unpack $ wpName page)
+         | page <- pages
+         ]
 
 buildWiki :: Logger -> Bool -> Bool -> CommentCacheVar -> Connection -> ClientM ()
 buildWiki logger fast keepGit commentCache conn = do
