@@ -34,6 +34,7 @@ import Trac.Db as Trac
 import Trac.Db.Types as Trac
 import qualified Trac.Scraper as Scraper
 import qualified Trac.Convert
+import qualified Trac.Parser
 import Settings
 import UserLookup
 import TicketImport
@@ -58,11 +59,13 @@ data Mode = Import { skipMilestones :: Bool
                    }
           | TestParser
           | TestScraper [String]
+          | TestParserOnly
 
 mode :: Parser Mode
 mode = hsubparser $
        command "import" (info (helper <*> importMode) (progDesc "import mode"))
-    <> command "test-parser" (info (helper <*> testParserMode) (progDesc "test ticket parser"))
+    <> command "test-parser" (info (helper <*> pure TestParser) (progDesc "test ticket parser and Markdown writer"))
+    <> command "test-parser-only" (info (helper <*> pure TestParserOnly) (progDesc "test ticket parser"))
     <> command "test-scraper" (info (helper <*> testScraperMode) (progDesc "test wiki parser"))
 
 importMode :: Parser Mode
@@ -81,9 +84,6 @@ ticketNumberSet =
   fmap S.fromList $ many
   $ argument (TicketNumber <$> auto) (metavar "N" <> help "ticket numbers")
 
-testParserMode :: Parser Mode
-testParserMode = pure TestParser
-
 testScraperMode :: Parser Mode
 testScraperMode =
   TestScraper <$> some (argument str $ metavar "URL" <> help "Wiki page URLs to parse")
@@ -93,6 +93,10 @@ main = do
     logger <- makeStdoutLogger
     the_mode <- execParser $ info (helper <*> mode) mempty
     case the_mode of
+      TestParserOnly -> do
+        wpBody <- getContents
+        print $ Trac.Parser.parseTrac Nothing wpBody
+
       TestParser -> do
         wpBody <- getContents
         mdBody <- printParseError logger (T.pack wpBody) $
