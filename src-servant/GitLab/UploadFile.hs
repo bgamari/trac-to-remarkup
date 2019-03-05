@@ -40,6 +40,7 @@ uploadFile (AccessToken tok) sudo (ProjectId prjId) fname cs = do
     base <- baseUrl <$> ask
     out <- liftIO $ readProcess "curl"
         [ "--silent"
+        , "--show-error"
         , "--request", "POST"
         , "--header", "PRIVATE-TOKEN: " <> T.unpack tok
         , "--form", "file=@" <> tmpfile
