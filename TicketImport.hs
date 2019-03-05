@@ -460,11 +460,20 @@ createTicketChanges logger' milestoneMap userIdOracle commentCache storeComment 
                     iid
         writeLog logger "UNSUBSCRIBED" $ show result
 
+      -- Remove the changes we've made via subscription to avoid producing
+      -- unnecessary metadata tables.
+      let resolvedUsers = M.keysSet toSubscribe' <> M.keysSet toUnsubscribe'
       let oldCC = ticketCC (changeFields tc)
-          -- Remove the changes we've made via subscription to avoid producing
-          -- unnecessary metadata tables
-          newCC = oldCC { newValue = fmap (\s -> (s `S.union` M.keysSet toSubscribe') `S.difference` M.keysSet toUnsubscribe') (newValue oldCC) }
-      return $ (changeFields tc) { ticketCC = newCC }
+          newCC = oldCC
+                    { newValue = fmap (`S.difference` resolvedUsers) (newValue oldCC)
+                    , oldValue = fmap (`S.difference` resolvedUsers) (oldValue oldCC)
+                    }
+          -- In case the old and new sets are identical after filtering, set
+          -- both to NULL to explicitly make this update a no-op.
+          newCC' = if (newValue oldCC == oldValue oldCC)
+                      then Update Nothing Nothing
+                      else newCC
+      return $ (changeFields tc) { ticketCC = newCC' }
 
     -- Figure out the comment number. We have to do this by counting how many
     -- comments there are on this ticket so far, because Trac doesn't actually

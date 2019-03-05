@@ -244,4 +244,7 @@ tracWikiNameToGitlab twn
     baseGWN = tracWikiBaseNameToGitlab baseTWN
 
 tracWikiBaseNameToGitlab :: String -> String
-tracWikiBaseNameToGitlab = intercalate "/" . map (toKebab . fromHumps) . splitOn "/"
+tracWikiBaseNameToGitlab = intercalate "/" . map (write . parse) . splitOn "/"
+  where
+    write = toKebab
+    parse = fromKebab >=> fromSnake >=> fromHumps

@@ -91,7 +91,8 @@ buildWiki logger fast keepGit commentCache conn = do
         liftIO $ do
           writeLog logger "INFO" $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
           hFlush stdout
-        let baseFilename = wc </> (tracWikiBaseNameToGitlab . T.unpack $ wpName)
+        let gitlabWikiPath = tracWikiBaseNameToGitlab . T.unpack $ wpName
+            baseFilename = wc </> gitlabWikiPath
             filename = baseFilename <.> "md"
             tracFilename = baseFilename <.> "trac"
         liftIO $ do
@@ -117,6 +118,23 @@ buildWiki logger fast keepGit commentCache conn = do
                             src
 
           liftIO $ putMVar anchorMapVar $ either (const anchorMap) snd res
+
+          let oldUrlRegex = "^/trac/ghc/wiki/" <> escapeNginxRegex wpName <> "$"
+              newUrl = "/ghc/ghc/wikis/" <> gitlabWikiPath
+              escapeNginxRegex =
+                T.concatMap escapeNginxRegexChar
+              escapeNginxRegexChar c
+                | c `elem` specialChars = "\\" <> T.singleton c
+                | otherwise = T.singleton c
+                where
+                  specialChars :: [Char]
+                  specialChars = ".-[]()\\^${}" 
+              rewriteSpec :: String
+              rewriteSpec =
+                  printf "rewrite %s %s permanent;"
+                    oldUrlRegex newUrl
+          liftIO $ appendFile "./rewrites.nginx" $ "    " ++ rewriteSpec ++ "\n"
+          writeLog logger "NGINX" rewriteSpec
 
           writeLog logger "INFO" $ printf "Create file %s in directory %s\n"
             (show filename)
