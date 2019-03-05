@@ -32,7 +32,7 @@ fetchTicketAttachment baseUrl (TicketNumber n) filename = do
               , show n
               , T.unpack filename
               ]
-        cp = (proc "curl" ["--silent", url]) { std_out = CreatePipe }
+        cp = (proc "curl" ["--silent", "--show-error", url]) { std_out = CreatePipe }
     (_, Just out, _, h) <- createProcess cp
     content <- BS.hGetContents out
     exit <- waitForProcess h
