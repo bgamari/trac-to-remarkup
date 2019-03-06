@@ -52,6 +52,7 @@ Trac import
    echo 'DROP DATABASE trac_ghc; CREATE DATABASE trac_ghc;' | sudo -u postgres psql
    xzcat trac_ghc.sql.xz | sudo -u postgres psql trac_ghc
    echo 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO ben;' | sudo -u postgres psql trac_ghc
+   cat fixup-trac-db.sql | sudo -u postgres psql trac_ghc
    ```
 1. Shut down `postfix` to ensure no mail makes it out.
 1. Add an SSH key for this user so the import script can push the wiki
@@ -71,6 +72,7 @@ Trac import
    to trigger reprocessing of issue mentions in commits
 1. Clear the `mailers` sidekiq queue again before reenabling mail
 1. `sudo -u postgres psql gitlab -c 'REVOKE SELECT, INSERT, UPDATE ON TABLE issues FROM ben;'`
+1. Run `push-labels.py`
 
 Wiki Fix-up
 -----------
