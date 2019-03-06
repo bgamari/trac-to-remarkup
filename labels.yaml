@@ -1,0 +1,309 @@
+- color: '#428BCA'
+  description: ''
+  name: API annotations
+- color: '#428BCA'
+  description: null
+  name: ApplicativeDo
+- color: '#428BCA'
+  description: null
+  name: Arrows
+- color: '#428BCA'
+  description: null
+  name: backpack
+- color: '#5843AD'
+  description: ''
+  name: backport
+- color: '#AD8D43'
+  description: ''
+  name: backport request
+- color: '#5843AD'
+  description: ''
+  name: bug
+- color: '#428BCA'
+  description: null
+  name: CAFs
+- color: '#428BCA'
+  description: null
+  name: CI breakage
+- color: '#428BCA'
+  description: null
+  name: clang
+- color: '#428BCA'
+  description: null
+  name: code-gen
+- color: '#428BCA'
+  description: null
+  name: code generation
+- color: '#428BCA'
+  description: null
+  name: compact normal forms
+- color: '#CC0033'
+  description: ''
+  name: compiler crash
+- color: '#5CB85C'
+  description: ''
+  name: compiler perf
+- color: '#428BCA'
+  description: null
+  name: core libraries
+- color: '#428BCA'
+  description: null
+  name: cpp
+- color: '#428BCA'
+  description: null
+  name: CPR analysis
+- color: '#428BCA'
+  description: null
+  name: CSE
+- color: '#428BCA'
+  description: null
+  name: CUSKs
+- color: '#428BCA'
+  description: null
+  name: Data Parallel Haskell
+- color: '#428BCA'
+  description: null
+  name: debugger
+- color: '#428BCA'
+  description: null
+  name: debug information
+- color: '#428BCA'
+  description: null
+  name: deriving
+- color: '#428BCA'
+  description: null
+  name: documentation
+- color: '#428BCA'
+  description: null
+  name: driver
+- color: '#428BCA'
+  description: null
+  name: error messages
+- color: '#428BCA'
+  description: null
+  name: exceptions
+- color: '#428BCA'
+  description: null
+  name: external-directory
+- color: '#428BCA'
+  description: null
+  name: external-hoopl
+- color: '#428BCA'
+  description: null
+  name: external-hsc2hs
+- color: '#428BCA'
+  description: null
+  name: external-old-time
+- color: '#428BCA'
+  description: null
+  name: external-pretty
+- color: '#428BCA'
+  description: null
+  name: external-process
+- color: '#428BCA'
+  description: null
+  name: external-random
+- color: '#428BCA'
+  description: null
+  name: external-unix
+- color: '#5843AD'
+  description: ''
+  name: feature request
+- color: '#428BCA'
+  description: null
+  name: FFI
+- color: '#428BCA'
+  description: null
+  name: float-out
+- color: '#428BCA'
+  description: null
+  name: functional dependencies
+- color: '#428BCA'
+  description: null
+  name: GADTs
+- color: '#428BCA'
+  description: null
+  name: generics
+- color: '#428BCA'
+  description: null
+  name: GHC API
+- color: '#428BCA'
+  description: null
+  name: ghc build failure
+- color: '#428BCA'
+  description: null
+  name: GHCi
+- color: '#428BCA'
+  description: null
+  name: ghc-pkg
+- color: '#428BCA'
+  description: null
+  name: hadrian
+- color: '#428BCA'
+  description: null
+  name: HPC
+- color: '#428BCA'
+  description: null
+  name: hs-boot
+- color: '#428BCA'
+  description: null
+  name: ImpredicativeTypes
+- color: '#CC0033'
+  description: ''
+  name: incorrect runtime result
+- color: '#428BCA'
+  description: null
+  name: infrastructure
+- color: '#428BCA'
+  description: null
+  name: InjectiveFamilies
+- color: '#428BCA'
+  description: null
+  name: inlining
+- color: '#428BCA'
+  description: null
+  name: integer-gmp
+- color: '#428BCA'
+  description: null
+  name: join points
+- color: '#428BCA'
+  description: null
+  name: late lambda lifting
+- color: '#428BCA'
+  description: null
+  name: linking
+- color: '#428BCA'
+  description: null
+  name: LLVM backend
+- color: '#0033CC'
+  description: null
+  name: merge_first
+- color: '#428BCA'
+  description: null
+  name: NCG backend
+- color: '#5CB85C'
+  description: ''
+  name: newcomer
+- color: '#428BCA'
+  description: null
+  name: nofib
+- color: '#F0AD4E'
+  description: null
+  name: nonmoving-gc
+- color: '#428BCA'
+  description: null
+  name: OverloadedRecordFields
+- color: '#428BCA'
+  description: null
+  name: package system
+- color: '#428BCA'
+  description: null
+  name: parser
+- color: '#428BCA'
+  description: null
+  name: partial type sigs
+- color: '#428BCA'
+  description: null
+  name: pattern synonyms
+- color: '#428BCA'
+  description: null
+  name: performance
+- color: '#428BCA'
+  description: null
+  name: plugins
+- color: '#428BCA'
+  description: null
+  name: PolyKinds
+- color: '#0033CC'
+  description: PowerPC/POWER native code generator
+  name: PPC NCG
+- color: '#428BCA'
+  description: null
+  name: profiling
+- color: '#428BCA'
+  description: null
+  name: QuantifiedContexts
+- color: '#428BCA'
+  description: null
+  name: recompilation checking
+- color: '#428BCA'
+  description: null
+  name: remote GHCi
+- color: '#428BCA'
+  description: null
+  name: roles
+- color: '#428BCA'
+  description: null
+  name: RTS
+- color: '#428BCA'
+  description: null
+  name: rules
+- color: '#CC0033'
+  description: ''
+  name: runtime crash
+- color: '#CC0033'
+  description: ''
+  name: runtime perf
+- color: '#428BCA'
+  description: null
+  name: SafeHaskell
+- color: '#428BCA'
+  description: null
+  name: SIMD
+- color: '#428BCA'
+  description: null
+  name: simplifier
+- color: '#428BCA'
+  description: null
+  name: static argument transformation
+- color: '#428BCA'
+  description: null
+  name: StaticPointers
+- color: '#428BCA'
+  description: null
+  name: STM
+- color: '#428BCA'
+  description: null
+  name: strings
+- color: '#5843AD'
+  description: ''
+  name: task
+- color: '#428BCA'
+  description: null
+  name: TemplateHaskell
+- color: '#8E44AD'
+  description: null
+  name: testsuite
+- color: '#7F8C8D'
+  description: ''
+  name: Trac import
+- color: '#428BCA'
+  description: null
+  name: Typeable
+- color: '#428BCA'
+  description: null
+  name: TypeApplications
+- color: '#428BCA'
+  description: null
+  name: typechecker
+- color: '#428BCA'
+  description: null
+  name: typed holes
+- color: '#428BCA'
+  description: null
+  name: typed TemplateHaskell
+- color: '#428BCA'
+  description: null
+  name: TypeInType
+- color: '#428BCA'
+  description: null
+  name: Unicode
+- color: '#CC0033'
+  description: ''
+  name: upstream
+- color: '#69D100'
+  description: null
+  name: user-facing
+- color: '#34495E'
+  description: ''
+  name: wip/marge_bot_batch_merge_job
