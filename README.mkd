@@ -27,6 +27,18 @@ Test import preparation
    sudo -u postgres psql gitlab -c 'GRANT SELECT, INSERT, UPDATE ON TABLE issues TO ben;'
    ```
   
+1. Restore from backup: `sudo gitlab-rake gitlab:backup:restore`
+1. Make sure that `authorized_keys` is up-to-date (this doesn't seem to happen
+   during restore):
+   ```
+   sudo systemctl stop gitlab
+   sudo systemctl stop gitlab-workhorse
+   sudo systemctl stop gitlab-sidekiq
+   sudo gitlab-rake gitlab:shell:setup
+   sudo systemctl start gitlab
+   sudo systemctl start gitlab-workhorse
+   sudo systemctl start gitlab-sidekiq
+   ```
 1. Create a `ghc` group.
 1. Create a `ghc` project in said group.
 1. Create an administrator account called `trac-import`
@@ -55,9 +67,8 @@ Trac import
 1. Clear the `mailers` sidekiq queue
 1. Run `sudo -u postgres bash diff-ticket-lists.sh` to verify that there are no
    unexpectedly-missing tickets.
-1. Run `git push git@gitlab.haskell.org:ghc/ghc
-   origin/master:refs/heads/wip/magic-carpet-ride` to trigger reprocessing of issue
-   mentions in commits
+1. Run `git push git@gitlab.haskell.org:ghc/ghc origin/master:refs/heads/wip/magic-carpet-ride` 
+   to trigger reprocessing of issue mentions in commits
 1. Clear the `mailers` sidekiq queue again before reenabling mail
 1. `sudo -u postgres psql gitlab -c 'REVOKE SELECT, INSERT, UPDATE ON TABLE issues FROM ben;'`
 
@@ -68,12 +79,24 @@ Wiki Fix-up
 git clone git@gitlab.haskell.org:ghc/ghc.wiki.git
 cd ghc.wiki
 git branch unsquashed
-../fixup-wiki.sh
-../squash-wiki.py
-../make-index.py
+bash ../fix-wiki.sh
+python3 ../squash-wiki.py
+python3 ../make-index.py
 git add index.md
 git commit -m 'Add index'
 git checkout master
 git reset --hard all-squashed
 git push origin master unsquashed -f
 ```
+
+Final import checklist
+----------------------
+
+1. Announce beginning of import on ghc-devs@
+1. Redirect gitlab.haskell.org and ghc.haskell.org to placeholders
+1. Grab Trac database export
+1. Run GitLab backup
+1. Disable mail delivery on GitLab
+1. **Perform import as described above**
+1. Delete `mailers` queue
+
