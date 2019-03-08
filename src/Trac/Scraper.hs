@@ -92,12 +92,11 @@ scrape :: AnchorMap
        -> String            -- ^ base url
        -> String            -- ^ Trac site
        -> String            -- ^ Trac project?
-       -> Maybe Int         -- ^ ?
        -> Maybe String      -- ^ source file name
        -> LookupComment
        -> LBS.ByteString    -- ^ Trac markup
        -> IO (String, AnchorMap)
-scrape anchorMap logger base org proj mn msrcname cm s =
+scrape anchorMap logger base org proj msrcname cm s =
   withContext logger "scrape" $ do
     (blocks, anchorMap') <- runScrape anchorMap logger $
           nodeToBlocks $
@@ -108,9 +107,33 @@ scrape anchorMap logger base org proj mn msrcname cm s =
     let an raw = HashMap.lookup raw anchorMap'
 
     out <- fmap (writeRemarkup base org proj) $
-      runConvert logger mn cm an $ convertBlocks blocks
+      runConvert logger Nothing cm an $ convertBlocks blocks
 
     return (out, anchorMap')
+
+mkRedirectPage :: AnchorMap
+               -> Logger
+               -> String            -- ^ base url
+               -> String            -- ^ Trac site
+               -> String            -- ^ Trac project?
+               -> LookupComment
+               -> String            -- ^ Wiki name
+               -> IO (String, AnchorMap)
+mkRedirectPage anchorMap logger base org proj cm wikiname =
+  withContext logger "mkRedirectPage" $ do
+    let an raw = HashMap.lookup raw anchorMap
+        blocks =
+          [ R.Para
+            [ R.Str "Page moved to"
+            , R.Space
+            , R.WikiLink
+                wikiname
+                Nothing
+            ]
+          ]
+    out <- fmap (writeRemarkup base org proj) $
+      runConvert logger Nothing cm an $ convertBlocks blocks
+    return (out, anchorMap)
 
 storeAnchor :: String -> Scrape ()
 storeAnchor orig = do

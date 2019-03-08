@@ -117,13 +117,12 @@ main = do
       TestScraper scrapeUrls -> do
         forM_ scrapeUrls $ \url -> do
           src <- Scraper.httpGet logger url
-          (dst, amap) <- Scraper.scrape
+          (dst, _) <- Scraper.scrape
             mempty
             logger
             (showBaseUrl gitlabBaseUrl)
             gitlabOrganisation
             gitlabProjectName
-            Nothing
             (Just "stdin")
             dummyGetCommentId
             src
