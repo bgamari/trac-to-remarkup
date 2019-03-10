@@ -5,7 +5,7 @@ stdenv.mkDerivation {
   src = ./.;
   nativeBuildInputs = [ wrapPython ];
   pythonPath = [ python-gitlab ];
-  installPath = ''
+  installPhase = ''
     install -D -t $out/bin dump-labels.py
     install -D -t $out/bin push-labels.py
   '';
