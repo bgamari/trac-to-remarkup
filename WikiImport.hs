@@ -87,15 +87,11 @@ buildWiki logger fast keepGit commentCache conn = do
 
     buildPage :: MVar Scraper.AnchorMap -> Git.WorkingCopy -> WikiPage -> ClientM ()
     buildPage anchorMapVar wc WikiPage{..} =
-      Logging.withContext (liftLogger logger) (T.unpack wpName) $ do
+      Logging.withContext logger' (T.unpack wpName) $ do
+        writeLog logger' "INFO" $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
+
         liftIO $ do
-          writeLog logger "INFO" $ (show wpTime) ++ " " ++ (T.unpack wpName) ++ " v" ++ (show wpVersion)
-          hFlush stdout
-        let gitlabWikiPath = tracWikiBaseNameToGitlab . T.unpack $ wpName
-            baseFilename = wc </> gitlabWikiPath
-            filename = baseFilename <.> "md"
-            tracFilename = baseFilename <.> "trac"
-        liftIO $ do
+          -- Assemble the original Trac URL for this wiki and version
           let url =
                 printf
                   "https://ghc.haskell.org/trac/ghc/wiki/%s?version=%i"
@@ -103,46 +99,48 @@ buildWiki logger fast keepGit commentCache conn = do
                   wpVersion
 
           anchorMap <- liftIO $ takeMVar anchorMapVar
-          res <- runExceptT $ do
-            Just src <- dealWithHttpError logger 0 . withTimeout 100000 $ Scraper.httpGet logger url
-            liftException ScraperError $ liftIO
-              $ Scraper.scrape
-                            anchorMap
-                            logger
-                            (showBaseUrl gitlabBaseUrl)
-                            gitlabOrganisation
-                            gitlabProjectName
-                            Nothing
-                            (Just filename)
-                            getCommentId
-                            src
+
+          -- Generate a page body.
+          res <- if "[[redirect(wiki:" `T.isPrefixOf` wpBody
+                    then do
+                        -- Handling a wiki redirect. Instead of going to
+                        -- Trac for an HTML rendering of the page, we will
+                        -- just extract the redirect target, and fabricate
+                        -- a link out of it.
+                        let wikiname =
+                              T.takeWhile (/= ')') .
+                              fromJust . T.stripPrefix "[[redirect(wiki:" $
+                              wpBody
+
+                        runExceptT $ do
+                          liftException ScraperError $ liftIO
+                            $ Scraper.mkRedirectPage
+                                          anchorMap
+                                          logger
+                                          (showBaseUrl gitlabBaseUrl)
+                                          gitlabOrganisation
+                                          gitlabProjectName
+                                          getCommentId
+                                          (T.unpack wikiname)
+                    else do
+                        -- This is not a redirect, so we fetch an HTML
+                        -- rendering from Trac and scrape that.
+                        runExceptT $ do
+                          Just src <- dealWithHttpError logger 0 . withTimeout 100000 $ Scraper.httpGet logger url
+                          liftException ScraperError $ liftIO
+                            $ Scraper.scrape
+                                          anchorMap
+                                          logger
+                                          (showBaseUrl gitlabBaseUrl)
+                                          gitlabOrganisation
+                                          gitlabProjectName
+                                          (Just filename)
+                                          getCommentId
+                                          src
 
           liftIO $ putMVar anchorMapVar $ either (const anchorMap) snd res
 
-          let oldUrlRegex = "^/trac/ghc/wiki/" <> escapeNginxRegex wpName <> "$"
-              newUrl = "/ghc/ghc/wikis/" <> gitlabWikiPath
-              escapeNginxRegex =
-                T.concatMap escapeNginxRegexChar
-              escapeNginxRegexChar c
-                | c `elem` specialChars = "\\" <> T.singleton c
-                | otherwise = T.singleton c
-                where
-                  specialChars :: [Char]
-                  specialChars = ".-[]()\\^${}" 
-              rewriteSpec :: String
-              rewriteSpec =
-                  printf "rewrite %s %s permanent;"
-                    oldUrlRegex newUrl
-          liftIO $ appendFile "./rewrites.nginx" $ "    " ++ rewriteSpec ++ "\n"
-          writeLog logger "NGINX" rewriteSpec
-
-          writeLog logger "INFO" $ printf "Create file %s in directory %s\n"
-            (show filename)
-            (show $ takeDirectory filename)
-          hFlush stdout
-          createDirectoryIfMissing True (takeDirectory filename)
-          T.writeFile tracFilename wpBody
-
+          -- Write out the result (or handle conversion error).
           case res of
             Right (body, _) ->
               writeFile filename body
@@ -154,6 +152,15 @@ buildWiki logger fast keepGit commentCache conn = do
                   "CONVERSION ERROR\n\nError: %s\n\nOriginal source:\n\n```trac\n%s\n```\n"
                   (showScrapeError err)
                   wpBody
+    
+          -- Also store the original Trac source for convenience.
+          writeLog logger "INFO" $ printf "Create file %s in directory %s\n"
+            (show filename)
+            (show $ takeDirectory filename)
+          createDirectoryIfMissing True (takeDirectory filename)
+          T.writeFile tracFilename wpBody
+
+        -- Make a git commit
         muser <- do
           (pure $ findKnownUser wpAuthor)
             |$| (listToMaybe <$> findUsersByUsername gitlabToken wpAuthor)
@@ -173,6 +180,30 @@ buildWiki logger fast keepGit commentCache conn = do
           unless (all isSpace status) $ do
             git_ logger wc "add" ["."] >>= writeLog logger "GIT"
             git_ logger wc "commit" ["-m", msg, "--author=" ++ commitAuthor, "--date=" ++ commitDate] >>= writeLog logger "GIT"
+
+        -- Generate a Trac -> GitLab redirect rule to keep old URLs working.
+        let oldUrlRegex = "^/trac/ghc/wiki/" <> escapeNginxRegex wpName <> "$"
+            newUrl = "/ghc/ghc/wikis/" <> gitlabWikiPath
+            escapeNginxRegex =
+              T.concatMap escapeNginxRegexChar
+            escapeNginxRegexChar c
+              | c `elem` specialChars = "\\" <> T.singleton c
+              | otherwise = T.singleton c
+              where
+                specialChars :: [Char]
+                specialChars = ".-[]()\\^${}" 
+            rewriteSpec :: String
+            rewriteSpec =
+                printf "rewrite %s %s permanent;"
+                  oldUrlRegex newUrl
+        liftIO $ appendFile "./rewrites.nginx" $ "    " ++ rewriteSpec ++ "\n"
+        writeLog logger' "NGINX" rewriteSpec
+      where
+        logger' = liftLogger logger
+        gitlabWikiPath = tracWikiBaseNameToGitlab . T.unpack $ wpName
+        baseFilename = wc </> gitlabWikiPath
+        filename = baseFilename <.> "md"
+        tracFilename = baseFilename <.> "trac"
 
 data ScrapeError = ScraperError Scraper.ConversionError
                  | HttpError HttpException
