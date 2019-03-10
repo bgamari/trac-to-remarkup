@@ -57,5 +57,7 @@ let
   };
 
 in
-
-  if pkgs.lib.inNixShell then drv.env else drv
+  if pkgs.lib.inNixShell then drv.env else pkgs.symlinkJoin {
+    name = "trac-to-remarkup";
+    paths = [ drv (pkgs.python3Packages.callPackage ./label-config {}) ];
+  }
