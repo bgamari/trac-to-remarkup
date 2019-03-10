@@ -19,7 +19,7 @@ import Debug.Trace
 import Data.Maybe
 import Control.Applicative
 import Control.Exception
-import Text.Megaparsec.Error (ParseError, parseErrorPretty)
+import Text.Megaparsec.Error (ParseErrorBundle, errorBundlePretty)
 import Data.Void
 import Text.Printf
 import Logging
@@ -90,15 +90,15 @@ convertIgnoreErrors logger base org proj mn msrcname cm an s =
         printf "Error:\n\n```\n%s\n```\n\nOriginal Trac source:\n\n```trac\n%s\n```\n"
           (displayException err) s
 
-    handleParseError :: ParseError Char Void -> IO String
+    handleParseError :: ParseErrorBundle String Void -> IO String
     handleParseError err = do
-      writeLog logger "PARSER-ERROR" $ parseErrorPretty err
+      writeLog logger "PARSER-ERROR" $ errorBundlePretty err
       fmap (writeRemarkup base org proj) $
         runConvert logger mn cm an $
           convertBlocks
             [R.Header 1
               [R.Str "PARSER ERROR:"]
-              [ R.Para [R.Str $ parseErrorPretty err]
+              [ R.Para [R.Str $ errorBundlePretty err]
               , R.Code (Just "trac") s
               ]
             ]

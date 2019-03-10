@@ -35,7 +35,7 @@ library
                , http-client-tls
                , http-types
                , lifted-base
-               , megaparsec > 6 && < 7
+               , megaparsec > 7 && < 8
                , monad-control
                , mtl
                , postgresql-simple
@@ -123,7 +123,7 @@ executable trac-import
                , http-client-tls
                , http-client
                , http-types
-               , megaparsec > 6 && < 7
+               , megaparsec > 7 && < 8
                , mtl
                , postgresql-simple
                , servant-client

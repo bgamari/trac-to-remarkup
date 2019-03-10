@@ -14,7 +14,7 @@ import Debug.NoTrace
 import Control.Applicative (empty)
 import Control.Monad (void)
 import qualified Text.Megaparsec.Char.Lexer as L
-import Text.Megaparsec.Char (anyChar, string, char, oneOf, noneOf, satisfy, newline, spaceChar)
+import Text.Megaparsec.Char (string, char, newline, spaceChar)
 import qualified Text.Megaparsec.Char as C
 
 import Control.Applicative ((<|>), some, optional)
@@ -109,7 +109,7 @@ instance Walk TableCell Inline where
 
 type Document = [Block]
 
-parseTrac :: Maybe String -> String -> Either (ParseError Char Void) [Block]
+parseTrac :: Maybe String -> String -> Either (ParseErrorBundle String Void) [Block]
 parseTrac msrcname s =
   runParser blocks srcname sn
   where
@@ -175,12 +175,12 @@ inlineMarkup n = try $ do
 monospaced :: Parser Inline
 monospaced =
   Monospaced Nothing <$> try (between (char '`') (char '`')
-                  (someTill anyChar (lookAhead $ char '`')))
+                  (someTill anySingle (lookAhead $ char '`')))
 
 monospaced2 :: Parser Inline
 monospaced2 = try . between (string "{{{") (string "}}}") $ do
   Monospaced <$> (optional $ try (many (satisfy isSpace) *> string "#!") *> word <* skipSpaces)
-             <*> someTill anyChar (lookAhead $ string "}}}")
+             <*> someTill anySingle (lookAhead $ string "}}}")
 
 quoted :: Parser a -> Parser a
 quoted = between (char '"') (char '"')
@@ -291,7 +291,7 @@ para = Para <$> some inline
 
 anyLine :: Parser String
 anyLine = do
- v <- manyTill anyChar newline
+ v <- manyTill anySingle newline
  traceShowM v
  return v
 
@@ -459,13 +459,13 @@ longhandLink = do
   withDesc <|> withoutDesc
   where
     withoutDesc = do
-      l <- try $ manyTill anyChar (try $ string "]]")
+      l <- try $ manyTill anySingle (try $ string "]]")
       f <- makeLink l
       let desc = words l
       return $ f desc
 
     withDesc = do
-      l <- manyTill anyChar (char '|')
+      l <- manyTill anySingle (char '|')
       f <- makeLink l
       desc <- words <$> manyTill (noneOf "]\n") (string "]]")
       return $ f desc
@@ -516,7 +516,7 @@ makeLink =
         Just commentNumber ->
           return $ CommentLink (Just ticketNumber) commentNumber . emptyToNothing
     makeWebLink = do
-      url <- manyTill anyChar eof
+      url <- manyTill anySingle eof
       return $ Link url
 
 
@@ -576,7 +576,7 @@ blockQuote = try $ do
 
 parseFromString :: Parser b -> String -> Parser b
 parseFromString parser str = do
-  oldPos <- getPosition
+  oldPos <- getOffset
   oldInput <- getInput
   setInput str
   result <- parser
@@ -585,7 +585,7 @@ parseFromString parser str = do
   traceM "success"
   eof
   setInput oldInput
-  setPosition oldPos
+  setOffset oldPos
   return result
 
 reservedChars :: [Char]

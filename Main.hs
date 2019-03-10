@@ -19,7 +19,7 @@ import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 
-import Text.Megaparsec.Error (ParseError, parseErrorPretty)
+import Text.Megaparsec.Error (ParseErrorBundle, errorBundlePretty)
 import Database.PostgreSQL.Simple
 import Network.HTTP.Client.TLS as TLS
 import Options.Applicative hiding (ParseError, action)
@@ -194,11 +194,11 @@ dummyGetCommentId _t _c = pure MissingCommentRef
 printParseError :: Logger -> Text -> IO String -> IO String
 printParseError logger body action = action `catch` h
   where
-    h :: ParseError Char Void -> IO String
+    h :: ParseErrorBundle String Void -> IO String
     h err = do
-      writeLog logger "PARSER-ERROR" $ parseErrorPretty err
+      writeLog logger "PARSER-ERROR" $ errorBundlePretty err
       return $ printf "Parser error:\n\n```\n%s\n```\n\nOriginal source:\n\n```trac\n%s\n```\n"
-        (parseErrorPretty err) body
+        (errorBundlePretty err) body
 
 makeMutations :: Logger
               -> Connection
