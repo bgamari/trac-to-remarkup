@@ -1,309 +1,415 @@
 - color: '#428BCA'
-  description: ''
+  description: 'API annotations for preserving source token locations in the Haskell AST'
   name: API annotations
 - color: '#428BCA'
-  description: null
+  description: 'The ApplicateDo language extension'
   name: ApplicativeDo
 - color: '#428BCA'
-  description: null
+  description: 'The Arrows language extension'
   name: Arrows
+
 - color: '#428BCA'
-  description: null
+  description: 'The Backpack module system'
   name: backpack
+
 - color: '#5843AD'
-  description: ''
   name: backport
+  description: 'Request that a patch be backported to a stable branch'
+
 - color: '#AD8D43'
-  description: ''
   name: backport request
+  description: 'Request that a patch be backported to a stable branch'
+
 - color: '#5843AD'
-  description: ''
   name: bug
+  description: 'A bug or infecility'
+
 - color: '#428BCA'
-  description: null
   name: CAFs
+  description: 'Handling of Constant Applicative Forms'
+
 - color: '#428BCA'
-  description: null
   name: CI breakage
+  description: 'Things which break the CI build'
+
 - color: '#428BCA'
-  description: null
   name: clang
+  description: 'Things specific to use with the Clang C compiler (not necessarily the LLVM backend)'
+
 - color: '#428BCA'
-  description: null
   name: code-gen
+  description: 'Things pertaining to STM -> C-- code generation'
+
 - color: '#428BCA'
-  description: null
   name: code generation
+  description: 'Things pertaining to STM -> C-- code generation'
+
 - color: '#428BCA'
-  description: null
   name: compact normal forms
+  description: 'Compact normal forms (also known as compact regions)'
+
 - color: '#CC0033'
-  description: ''
   name: compiler crash
+  description: 'Bugs which cause a compile-time crash'
+
 - color: '#5CB85C'
-  description: ''
   name: compiler perf
+  description: 'Things pertaining to compile-time performance'
+
 - color: '#428BCA'
-  description: null
   name: core libraries
+  description: 'Things pertaining to core libraries'
+
 - color: '#428BCA'
-  description: null
   name: cpp
+  description: 'Things pertaining to the C preprocessor'
+
 - color: '#428BCA'
-  description: null
   name: CPR analysis
+  description: 'Constructed Product Result analysis'
+
 - color: '#428BCA'
-  description: null
   name: CSE
+  description: 'Common subexpression elimination optimization'
+
 - color: '#428BCA'
-  description: null
   name: CUSKs
+  description: 'Complete User-Specified Kind annotations'
+
 - color: '#428BCA'
-  description: null
   name: Data Parallel Haskell
+  description: 'The (dead) Data Parallel Haskell project'
+
 - color: '#428BCA'
-  description: null
   name: debugger
+  description: 'The GHCi Debugger'
+
 - color: '#428BCA'
-  description: null
   name: debug information
+  description: 'Native debugging information and backtrace support (e.g. DWARF)'
+
 - color: '#428BCA'
-  description: null
   name: deriving
+  description: 'Typeclass deriving features'
+
 - color: '#428BCA'
-  description: null
   name: documentation
+  description: 'Documentation'
+
 - color: '#428BCA'
-  description: null
   name: driver
+  description: 'The compiler driver'
+
 - color: '#428BCA'
-  description: null
   name: error messages
+  description: 'Compiler error messages'
+
 - color: '#428BCA'
-  description: null
   name: exceptions
+  description: 'Runtime exception support'
+
 - color: '#428BCA'
-  description: null
   name: external-directory
+  description: 'The directory library'
+
 - color: '#428BCA'
-  description: null
   name: external-hoopl
+  description: 'The hoopl library'
+
 - color: '#428BCA'
-  description: null
   name: external-hsc2hs
+  description: 'The hsc2hs library'
+
 - color: '#428BCA'
-  description: null
   name: external-old-time
+  description: 'The old-time library'
+
 - color: '#428BCA'
-  description: null
   name: external-pretty
+  description: 'The pretty library'
+
 - color: '#428BCA'
-  description: null
   name: external-process
+  description: 'The process library'
+
 - color: '#428BCA'
-  description: null
   name: external-random
+  description: 'The random library'
+
 - color: '#428BCA'
-  description: null
   name: external-unix
+  description: 'The unix library'
+
 - color: '#5843AD'
-  description: ''
   name: feature request
+  description: 'Feature requests'
+
 - color: '#428BCA'
-  description: null
   name: FFI
+  description: 'Foreign function interface'
+
 - color: '#428BCA'
-  description: null
+  description: 'The float-out optimization'
   name: float-out
+
+  # TODO: Rename
 - color: '#428BCA'
-  description: null
+  description: 'The FunctionalDependencies language extension.'
   name: functional dependencies
+
 - color: '#428BCA'
-  description: null
+  description: 'The GADTs language extension.'
   name: GADTs
+
 - color: '#428BCA'
-  description: null
   name: generics
+  description: 'GHC Generics'
+
 - color: '#428BCA'
-  description: null
+  description: 'The GHC API'
   name: GHC API
+
 - color: '#428BCA'
-  description: null
+  description: 'GHC fails to build'
   name: ghc build failure
+
 - color: '#428BCA'
-  description: null
+  description: 'The GHCi shell'
   name: GHCi
+
 - color: '#428BCA'
-  description: null
+  description: 'The ghc-pkg utility'
   name: ghc-pkg
+
 - color: '#428BCA'
-  description: null
+  description: 'The Hadrian build system'
   name: hadrian
+
 - color: '#428BCA'
-  description: null
+  description: 'The HPC code-coverage tool and library'
   name: HPC
+
 - color: '#428BCA'
-  description: null
+  description: '.hs-boot file handling'
   name: hs-boot
+
 - color: '#428BCA'
-  description: null
+  description: 'The ImpredicativeTypes language extension'
   name: ImpredicativeTypes
+
 - color: '#CC0033'
-  description: ''
+  description: 'Bugs which result in incorrect behavior at runtime'
   name: incorrect runtime result
+
 - color: '#428BCA'
-  description: null
+  description: "Development, code hosting, and issue tracking infrastructure"
   name: infrastructure
+
 - color: '#428BCA'
-  description: null
+  description: 'The InjectiveFamilies language extension'
   name: InjectiveFamilies
+
 - color: '#428BCA'
-  description: null
+  description: 'Code inlining optimization'
   name: inlining
+
 - color: '#428BCA'
-  description: null
+  description: 'The integer-gmp bignum library'
   name: integer-gmp
+
 - color: '#428BCA'
-  description: null
+  description: 'Join point optimization'
   name: join points
+
 - color: '#428BCA'
-  description: null
+  description: 'Late lambda lifting optimization'
   name: late lambda lifting
+
 - color: '#428BCA'
-  description: null
+  description: 'Linker issues'
   name: linking
+
 - color: '#428BCA'
-  description: null
+  description: 'LLVM backend issues (e.g. -fllvm)'
   name: LLVM backend
+
 - color: '#0033CC'
   description: null
   name: merge_first
+
 - color: '#428BCA'
-  description: null
+  description: "GHC's native code generator backend"
   name: NCG backend
+
 - color: '#5CB85C'
-  description: ''
+  description: 'Issues suitable for a newcomer contributor to pick up'
   name: newcomer
+
 - color: '#428BCA'
-  description: null
+  description: 'The nofib benchmark suite'
   name: nofib
+
 - color: '#F0AD4E'
-  description: null
+  description: 'The non-moving garbage collector'
   name: nonmoving-gc
+
 - color: '#428BCA'
-  description: null
+  description: 'The OverloadedRecordFields language extension'
   name: OverloadedRecordFields
+
 - color: '#428BCA'
-  description: null
+  description: 'Issues pertaining to handling of packages'
   name: package system
+
 - color: '#428BCA'
-  description: null
+  description: 'The Haskell parser'
   name: parser
+
 - color: '#428BCA'
-  description: null
+  description: 'Partial type signatures'
   name: partial type sigs
+
+  # TODO: Rename to PatternSynonyms
 - color: '#428BCA'
-  description: null
+  description: 'The PatternSynonyms language extension'
   name: pattern synonyms
+
+  # TODO: This label is too vague; should be moved to runtime performance and
+  # compiler performance
 - color: '#428BCA'
-  description: null
+  description: 'Performance issues'
   name: performance
+
 - color: '#428BCA'
-  description: null
+  description: 'Compiler plugins'
   name: plugins
+
+  # TODO? Move to TypeInType?
 - color: '#428BCA'
-  description: null
+  description: 'The PolyKinds language extension'
   name: PolyKinds
+
 - color: '#0033CC'
-  description: PowerPC/POWER native code generator
+  description: 'PowerPC/POWER native code generator'
   name: PPC NCG
+
 - color: '#428BCA'
-  description: null
+  description: 'The cost-center heap and CPU profiler'
   name: profiling
+
 - color: '#428BCA'
-  description: null
+  description: 'The QuantifiedContexts language extension'
   name: QuantifiedContexts
+
 - color: '#428BCA'
-  description: null
+  description: "Issues with GHC's recompilation avoidance mechanism"
   name: recompilation checking
+
 - color: '#428BCA'
-  description: null
+  description: "The GHCi external interpreter feature (-fexternal-interpreter)"
   name: remote GHCi
+
 - color: '#428BCA'
-  description: null
+  description: "Type variable roles and role annotations"
   name: roles
+
 - color: '#428BCA'
-  description: null
+  description: "The GHC runtime system"
   name: RTS
+
 - color: '#428BCA'
-  description: null
+  description: "Rewrite rules"
   name: rules
+
 - color: '#CC0033'
-  description: ''
+  description: 'Issues resulting in a crash at runtime'
   name: runtime crash
+
 - color: '#CC0033'
-  description: ''
+  description: 'Issues resulting in poor performance at runtime'
   name: runtime perf
+
 - color: '#428BCA'
-  description: null
+  description: 'The SafeHaskell language extension'
   name: SafeHaskell
+
 - color: '#428BCA'
-  description: null
+  description: 'Support for Single-Instruction/Multiple-Data instructions'
   name: SIMD
+
 - color: '#428BCA'
-  description: null
+  description: 'GHC Core simplifier'
   name: simplifier
+
 - color: '#428BCA'
-  description: null
+  description: 'The static argument transformation optimization'
   name: static argument transformation
+
 - color: '#428BCA'
-  description: null
+  description: 'The StaticPointers language extension'
   name: StaticPointers
+
 - color: '#428BCA'
-  description: null
+  description: 'Software Transactional Memory'
   name: STM
+
 - color: '#428BCA'
-  description: null
+  description: 'Treatment of literal strings'
   name: strings
+
 - color: '#5843AD'
-  description: ''
+  description: "Issues that aren't bugs"
   name: task
+
 - color: '#428BCA'
-  description: null
+  description: "The TemplateHaskell language extension"
   name: TemplateHaskell
+
 - color: '#8E44AD'
-  description: null
+  description: "GHC's testsuite tests and driver"
   name: testsuite
+
 - color: '#7F8C8D'
-  description: ''
+  description: 'The Trac-to-GitLab migration'
   name: Trac import
+
 - color: '#428BCA'
-  description: null
+  description: 'The Typeable typeclass and associated machinery'
   name: Typeable
+
 - color: '#428BCA'
-  description: null
+  description: 'The TypeApplications language extension'
   name: TypeApplications
+
+  # TODO? Is this useful?
 - color: '#428BCA'
-  description: null
+  description: "Issues with GHC's typechecker"
   name: typechecker
+
 - color: '#428BCA'
-  description: null
+  description: "Issues arising from typed holes"
   name: typed holes
+
 - color: '#428BCA'
-  description: null
+  description: "Typed TemplateHaskell splices"
   name: typed TemplateHaskell
+
 - color: '#428BCA'
-  description: null
+  description: "The TypeInType language extension"
   name: TypeInType
+
 - color: '#428BCA'
-  description: null
+  description: "Issues with Unicode support"
   name: Unicode
+
 - color: '#CC0033'
-  description: ''
+  description: 'Things that require coordination with an upstream package'
   name: upstream
+
 - color: '#69D100'
-  description: null
+  description: 'Changes that may affect the interface consumed by user code (e.g. base, ghc-prim)'
   name: user-facing
+
 - color: '#34495E'
   description: ''
   name: wip/marge_bot_batch_merge_job
